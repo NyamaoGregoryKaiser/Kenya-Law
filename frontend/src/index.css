@@ -1,0 +1,452 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Kenya Law Reports - Official Brand Theme */
+@import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Source+Sans+Pro:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --legal-maroon: #7A1F33;
+  --legal-maroon-dark: #5C1727;
+  --legal-maroon-light: #F5E8EB;
+  --legal-gold: #D9A12D;
+  --legal-gold-dark: #B8861F;
+  --legal-gold-light: #FDF6E3;
+  --legal-text: #232323;
+  --legal-text-muted: #5A5A5A;
+  --legal-bg: #FAFAFA;
+  --legal-white: #FFFFFF;
+  --legal-border: #E2E2E2;
+}
+
+body {
+  margin: 0;
+  font-family: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--legal-bg);
+  color: var(--legal-text);
+}
+
+/* Serif headings for legal authority */
+h1, h2, h3, .font-serif {
+  font-family: 'Merriweather', Georgia, serif;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+/* Custom scrollbar - Kenya Law theme */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--legal-maroon-light);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--legal-maroon);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--legal-maroon-dark);
+}
+
+/* Leaflet map styles */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+/* Legal gradient header - Maroon */
+.legal-gradient {
+  background: linear-gradient(135deg, var(--legal-maroon) 0%, var(--legal-maroon-dark) 100%);
+}
+
+/* Gold accent gradient */
+.gold-gradient {
+  background: linear-gradient(135deg, var(--legal-gold) 0%, var(--legal-gold-dark) 100%);
+}
+
+/* Kenya flag stripe (for national identity elements) */
+.kenya-flag-stripe {
+  background: linear-gradient(
+    to right,
+    #000000 0%, #000000 20%,
+    #BB0000 20%, #BB0000 40%,
+    #FFFFFF 40%, #FFFFFF 60%,
+    #006400 60%, #006400 80%,
+    #000000 80%, #000000 100%
+  );
+  border-radius: 9999px;
+}
+
+/* Scales of Justice icon style */
+.scales-badge {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--legal-maroon) 0%, var(--legal-maroon-dark) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 15px rgba(122, 31, 51, 0.3);
+}
+
+.scales-badge::after {
+  content: '⚖️';
+  font-size: 28px;
+}
+
+/* Primary Button - Golden Amber */
+.btn-legal {
+  position: relative;
+  color: var(--legal-text);
+  background: linear-gradient(135deg, var(--legal-gold) 0%, var(--legal-gold-dark) 100%);
+  transition: all 0.3s ease;
+  border: none;
+  font-weight: 600;
+}
+
+.btn-legal:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(217, 161, 45, 0.35);
+}
+
+/* Secondary Button - Maroon */
+.btn-legal-maroon {
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--legal-maroon) 0%, var(--legal-maroon-dark) 100%);
+}
+
+.btn-legal-maroon:hover {
+  box-shadow: 0 8px 25px rgba(122, 31, 51, 0.3);
+}
+
+/* Outline Button */
+.btn-legal-outline {
+  color: var(--legal-maroon);
+  background: transparent;
+  border: 2px solid var(--legal-maroon);
+}
+
+.btn-legal-outline:hover {
+  background: var(--legal-maroon);
+  color: white;
+}
+
+/* Watermark background - subtle legal pattern */
+.watermark-legal {
+  position: relative;
+}
+
+.watermark-legal::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: 
+    radial-gradient(circle at 20% 30%, rgba(122, 31, 51, 0.015) 0 25%, transparent 25%),
+    radial-gradient(circle at 80% 70%, rgba(217, 161, 45, 0.02) 0 25%, transparent 25%),
+    radial-gradient(circle at 50% 50%, rgba(122, 31, 51, 0.01) 0 30%, transparent 30%);
+  pointer-events: none;
+}
+
+/* Legal document card */
+.legal-card {
+  background: var(--legal-white);
+  border-radius: 8px;
+  border: 1px solid var(--legal-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s ease;
+}
+
+.legal-card:hover {
+  box-shadow: 0 4px 16px rgba(122, 31, 51, 0.08);
+  border-color: var(--legal-border-dark);
+}
+
+/* Citation card styling */
+.citation-card {
+  background: var(--legal-maroon-light);
+  border-left: 4px solid var(--legal-maroon);
+  padding: 1rem;
+  border-radius: 0 8px 8px 0;
+  margin: 0.5rem 0;
+}
+
+.citation-card .case-name {
+  font-family: 'Merriweather', serif;
+  font-weight: 700;
+  color: var(--legal-text);
+}
+
+.citation-card .case-meta {
+  font-size: 0.875rem;
+  color: var(--legal-text-muted);
+}
+
+/* Court badge */
+.court-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.court-badge.supreme {
+  background: var(--legal-maroon);
+  color: white;
+}
+
+.court-badge.appeal {
+  background: var(--legal-maroon-light);
+  color: var(--legal-maroon);
+  border: 1px solid var(--legal-maroon);
+}
+
+.court-badge.high {
+  background: var(--legal-gold-light);
+  color: var(--legal-gold-dark);
+  border: 1px solid var(--legal-gold);
+}
+
+/* Markdown styling for Legal AI responses */
+.markdown-body {
+  line-height: 1.7;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  font-family: 'Merriweather', Georgia, serif;
+  font-weight: 700;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: var(--legal-text);
+}
+
+.markdown-body p {
+  margin: 0.5rem 0;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.5rem 0 0.5rem 1.5rem;
+}
+
+.markdown-body strong {
+  font-weight: 600;
+  color: var(--legal-maroon);
+}
+
+.markdown-body blockquote {
+  border-left: 4px solid var(--legal-gold);
+  background: var(--legal-gold-light);
+  padding: 1rem;
+  margin: 1rem 0;
+  border-radius: 0 8px 8px 0;
+  font-style: italic;
+}
+
+/* Legal AI response card styling */
+.ai-response-card {
+  background: var(--legal-white);
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--legal-border);
+}
+
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--legal-gold-light);
+  color: var(--legal-gold-dark);
+  padding: 0.35rem 0.65rem;
+  border-radius: 4px;
+  font-weight: 600;
+  border: 1px solid var(--legal-gold);
+}
+
+.ai-section {
+  margin-top: 1.25rem;
+  border-top: 1px solid var(--legal-border);
+  padding-top: 1rem;
+}
+
+.ai-section-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--legal-maroon);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
+  background: var(--legal-maroon-light);
+  color: var(--legal-maroon);
+  border: 1px solid rgba(122, 31, 51, 0.2);
+}
+
+.guidance-box {
+  margin-top: 1.25rem;
+  border-radius: 8px;
+  background: var(--legal-gold-light);
+  border: 1px dashed var(--legal-gold);
+  padding: 1rem;
+}
+
+.ai-meta-row {
+  margin-top: 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--legal-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Legal disclaimer banner */
+.legal-disclaimer {
+  background: var(--legal-gold-light);
+  border: 1px solid var(--legal-gold);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: 0.8rem;
+  color: var(--legal-gold-dark);
+}
+
+.legal-disclaimer::before {
+  content: '⚖️ ';
+}
+
+/* Status badges for legal documents */
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status-badge.indexed {
+  background: var(--legal-gold-light);
+  color: var(--legal-gold-dark);
+  border: 1px solid var(--legal-gold);
+}
+
+.status-badge.processing {
+  background: var(--legal-maroon-light);
+  color: var(--legal-maroon);
+}
+
+.status-badge.published {
+  background: var(--legal-maroon);
+  color: white;
+}
+
+.status-badge.draft {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+/* Sidebar - Maroon theme */
+.sidebar-legal {
+  background: linear-gradient(180deg, var(--legal-maroon) 0%, var(--legal-maroon-dark) 100%);
+}
+
+.sidebar-legal .nav-item {
+  transition: all 0.2s ease;
+}
+
+.sidebar-legal .nav-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-legal .nav-item.active {
+  background: rgba(255, 255, 255, 0.15);
+  border-right: 4px solid var(--legal-gold);
+}
+
+/* Header accent bar */
+.header-accent {
+  height: 4px;
+  background: linear-gradient(90deg, var(--legal-maroon) 0%, var(--legal-gold) 50%, var(--legal-maroon) 100%);
+}
+
+/* Metric cards with gold accent */
+.metric-value {
+  color: var(--legal-gold-dark);
+  font-family: 'Merriweather', serif;
+}
+
+/* Table styling */
+.legal-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.legal-table th {
+  background: var(--legal-maroon);
+  color: white;
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+}
+
+.legal-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--legal-border);
+}
+
+.legal-table tr:hover td {
+  background: var(--legal-maroon-light);
+}
+
+/* Input focus states */
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--legal-gold) !important;
+  box-shadow: 0 0 0 3px rgba(217, 161, 45, 0.2);
+}
+
+/* Links */
+a {
+  color: var(--legal-maroon);
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: var(--legal-maroon-dark);
+}

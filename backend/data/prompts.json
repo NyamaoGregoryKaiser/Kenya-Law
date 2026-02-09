@@ -1,0 +1,82 @@
+[
+  {
+    "id": "sitrep",
+    "title": "SITREP (Operational Situation Report)",
+    "description": "Concise current situation, friendly/enemy forces, key terrain, actions.",
+    "prompt_text": "Provide a SITREP: current situation, friendly forces, enemy forces, key terrain, civil considerations, recent actions, and immediate recommendations. Keep it concise and mission-focused.",
+    "visibility_scope": "global",
+    "roles_allowed": [
+      "admin",
+      "analyst"
+    ],
+    "created_by": "system",
+    "version": 1,
+    "is_active": true,
+    "created_at": "2025-09-17T12:06:30.725439",
+    "updated_at": "2025-09-17T12:06:30.725439"
+  },
+  {
+    "id": "intel-brief",
+    "title": "Intelligence Brief (KDF)",
+    "description": "Threats, indicators, confidence, and likely courses of action in Kenya.",
+    "prompt_text": "Prepare an intelligence brief for KDF: outline key threats, indicators and warnings, confidence levels, and most-likely/most-dangerous courses of action. Tailor to Kenya’s regions and cross-border dynamics.",
+    "visibility_scope": "global",
+    "roles_allowed": [
+      "admin",
+      "analyst"
+    ],
+    "created_by": "system",
+    "version": 1,
+    "is_active": true,
+    "created_at": "2025-09-17T12:06:30.725439",
+    "updated_at": "2025-09-17T12:06:30.725439"
+  },
+  {
+    "id": "logistics",
+    "title": "Logistics Assessment",
+    "description": "Supply status, routes, constraints, and recommendations.",
+    "prompt_text": "Assess logistics: supply status, lines of communication, route security, constraints (fuel, maintenance, medical), and prioritized recommendations to sustain operations.",
+    "visibility_scope": "global",
+    "roles_allowed": [
+      "admin",
+      "analyst"
+    ],
+    "created_by": "system",
+    "version": 1,
+    "is_active": true,
+    "created_at": "2025-09-17T12:06:30.725439",
+    "updated_at": "2025-09-17T12:06:30.725439"
+  },
+  {
+    "id": "after-action",
+    "title": "After-Action Review (AAR)",
+    "description": "What happened, what went well, what to improve, next steps.",
+    "prompt_text": "Draft an AAR: what happened, what went well, what can be improved, lessons learned, and next steps. Provide actionable improvements and risk mitigations.",
+    "visibility_scope": "global",
+    "roles_allowed": [
+      "admin",
+      "analyst"
+    ],
+    "created_by": "system",
+    "version": 1,
+    "is_active": true,
+    "created_at": "2025-09-17T12:06:30.725439",
+    "updated_at": "2025-09-17T12:06:30.725439"
+  },
+  {
+    "id": "public-comm",
+    "title": "Public Communication (English + Swahili)",
+    "description": "Clear bilingual statement for public release.",
+    "prompt_text": "Compose a brief public statement in English with a Swahili translation. Keep it calm, factual, and reassuring. Avoid operational specifics; emphasize public safety and cooperation.",
+    "visibility_scope": "global",
+    "roles_allowed": [
+      "admin",
+      "analyst"
+    ],
+    "created_by": "system",
+    "version": 1,
+    "is_active": true,
+    "created_at": "2025-09-17T12:06:30.725439",
+    "updated_at": "2025-09-17T12:06:30.725439"
+  }
+]
