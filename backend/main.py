@@ -107,9 +107,9 @@ security = HTTPBearer()
 @app.get("/")
 async def root():
 	return {
-		"message": "PatriotAI Defense Hub API",
+		"message": "Kenya Law AI API",
 		"version": "1.0.0",
-		"description": "AI-powered decision support for Kenya's defense sector"
+		"description": "AI-powered legal research and analysis for Kenya's justice sector"
 	}
 
 @app.get("/api/prompts", response_model=PromptListResponse)
@@ -163,9 +163,9 @@ async def query_ai(
 		
 		if not custom_system:
 			custom_system = (
-				"You are PatriotAI, an AI assistant for Kenya's defence sector. "
-				"Be accurate, concise, and action-oriented. Provide classification suggestions, "
-				"clear recommendations, and highlight risks and assumptions. Use English; add Swahili glossaries when helpful."
+			"You are Kenya Law AI, an assistant for Kenyan law and jurisprudence. "
+			"Be accurate, concise, and practical. Explain relevant legal principles, case law, and statutes, "
+			"highlight important precedents, and clearly state assumptions. Use English with Swahili glossaries when helpful."
 			)
 
 		# Use the RAG system to generate response

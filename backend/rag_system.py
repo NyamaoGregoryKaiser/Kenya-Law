@@ -196,19 +196,19 @@ class PatriotAIRAGSystem:
 
 			if self.llm:
 				prompt = (
-					"You are PatriotAI, an AI assistant for Kenya's defense sector.\n"
-					"Answer the question based on the provided context and your knowledge.\n\n"
+					"You are Kenya Law AI, an assistant for Kenyan legal research and jurisprudence.\n"
+					"Answer the question based on the provided context, relevant case law, statutes, and your knowledge.\n\n"
 					f"Question: {query}\n\nContext:\n{context}\n\n"
-					"Provide an accurate, concise, action-oriented response with recommendations."
+					"Provide an accurate, concise legal analysis with clear reasoning and, where appropriate, references to Kenyan legal principles."
 				)
 				answer = self._invoke_with_fallback(prompt)
 			else:
 				answer = (
-					f"Based on the query '{query}', here's the intelligence analysis:\n\n"
-					f"This is a mock response from PatriotAI Defense Hub. In a production system, "
-					f"this would provide detailed analysis based on:\n- Internal intelligence documents ({len(relevant_docs)} documents found)\n"
-					f"- Real-time web intelligence ({len(web_results)} sources)\n- Historical operational data\n\n"
-					"The system would analyze threats, provide recommendations, and suggest appropriate responses based on Kenya's defense protocols."
+					f"Based on the query '{query}', here's a legal research summary:\n\n"
+					f"This is a mock response from Kenya Law AI. In a production system, "
+					f"this would provide detailed analysis based on:\n- Indexed legal documents and judgments ({len(relevant_docs)} documents found)\n"
+					f"- Any enabled web/legal research sources ({len(web_results)} sources)\n- Historical jurisprudence data\n\n"
+					"The system would explain the relevant legal principles, outline key authorities, and highlight how they may apply in the Kenyan context."
 				)
 
 			return {
