@@ -130,7 +130,7 @@ const Login: React.FC = () => {
         {/* Footer */}
         <div className="text-center mt-8">
           <p className="text-white/50 text-sm">
-            © 2024 Kenya Law Reports AI. All rights reserved.
+            © 2026 Kenya Law Reports AI. All rights reserved.
           </p>
           <p className="text-white/30 text-xs mt-1">
             Powered by Legal Intelligence
