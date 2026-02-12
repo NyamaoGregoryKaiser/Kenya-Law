@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Scale, Eye, EyeOff, BookOpen } from 'lucide-react';
+import { Eye, EyeOff, BookOpen } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const Login: React.FC = () => {
@@ -21,7 +21,7 @@ const Login: React.FC = () => {
       toast.success('Login successful!');
       navigate('/');
     } catch (error) {
-      toast.error('Invalid credentials. Use admin@kenyalaw.ai or researcher@kenyalaw.ai with password: demo123');
+      toast.error('Invalid email or password');
     } finally {
       setIsLoading(false);
     }
@@ -125,18 +125,6 @@ const Login: React.FC = () => {
               )}
             </button>
           </form>
-
-          {/* Demo Credentials */}
-          <div className="mt-6 p-4 bg-legal-maroon-light rounded-lg border border-legal-maroon/20">
-            <h3 className="text-sm font-semibold text-legal-maroon mb-2 flex items-center gap-2">
-              <Scale className="w-4 h-4" />
-              Demo Credentials
-            </h3>
-            <div className="text-xs text-legal-text-muted space-y-1">
-              <div><strong className="text-legal-text">Admin:</strong> admin@kenyalaw.ai / demo123</div>
-              <div><strong className="text-legal-text">Researcher:</strong> researcher@kenyalaw.ai / demo123</div>
-            </div>
-          </div>
         </div>
 
         {/* Footer */}
