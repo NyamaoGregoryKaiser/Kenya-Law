@@ -240,7 +240,7 @@ const Uploads: React.FC = () => {
                     type="text"
                     value={metadata.year}
                     onChange={(e) => setMetadata(m => ({ ...m, year: e.target.value }))}
-                    placeholder="2024"
+                    placeholder="2026"
                     className="w-full px-3 py-2 border border-legal-maroon/20 rounded-lg focus:ring-2 focus:ring-legal-maroon focus:border-transparent"
                   />
                 </div>
@@ -264,7 +264,7 @@ const Uploads: React.FC = () => {
                     type="text"
                     value={metadata.citation}
                     onChange={(e) => setMetadata(m => ({ ...m, citation: e.target.value }))}
-                    placeholder="[2024] eKLR 1234"
+                    placeholder="[2026] eKLR 1234"
                     className="w-full px-3 py-2 border border-legal-maroon/20 rounded-lg focus:ring-2 focus:ring-legal-maroon focus:border-transparent"
                   />
                 </div>

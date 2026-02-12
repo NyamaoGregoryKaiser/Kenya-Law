@@ -27,7 +27,7 @@ const Dashboard: React.FC = () => {
       id: 1,
       caseName: 'Republic v. John Kamau',
       court: 'High Court',
-      citation: '[2024] eKLR 1234',
+      citation: '[2026] eKLR 1234',
       date: '2 hours ago',
       type: 'Criminal'
     },
@@ -35,7 +35,7 @@ const Dashboard: React.FC = () => {
       id: 2,
       caseName: 'Mwangi & Another v. KRA',
       court: 'Court of Appeal',
-      citation: '[2024] eKLR 1189',
+      citation: '[2026] eKLR 1189',
       date: '5 hours ago',
       type: 'Tax'
     },
@@ -43,7 +43,7 @@ const Dashboard: React.FC = () => {
       id: 3,
       caseName: 'In Re: Estate of Ochieng',
       court: 'High Court',
-      citation: '[2024] eKLR 1156',
+      citation: '[2026] eKLR 1156',
       date: '1 day ago',
       type: 'Succession'
     },
@@ -51,7 +51,7 @@ const Dashboard: React.FC = () => {
       id: 4,
       caseName: 'Wanjiku v. Nairobi County',
       court: 'ELC',
-      citation: '[2024] eKLR 1098',
+      citation: '[2026] eKLR 1098',
       date: '2 days ago',
       type: 'Land'
     }
@@ -105,7 +105,7 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
               <p className="text-sm text-white/70">Coverage</p>
-              <p className="mt-1 text-2xl font-serif font-bold text-legal-gold">1963 – 2024</p>
+              <p className="mt-1 text-2xl font-serif font-bold text-legal-gold">1963 – 2026</p>
               <p className="text-xs text-white/60">Years of jurisprudence</p>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
