@@ -3,7 +3,6 @@ import { LucideIcon } from 'lucide-react';
 
 interface MetricCardProps {
   title: string;
-  titleSwahili: string;
   value: string;
   change: string;
   changeType: 'increase' | 'decrease' | 'neutral';
@@ -13,7 +12,6 @@ interface MetricCardProps {
 
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
-  titleSwahili,
   value,
   change,
   changeType,
@@ -34,7 +32,6 @@ const MetricCard: React.FC<MetricCardProps> = ({
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-legal-text-muted">{title}</p>
-          <p className="text-xs text-legal-text-muted/70">{titleSwahili}</p>
           <p className="text-2xl font-serif font-bold text-legal-gold-dark mt-2">{value}</p>
         </div>
         <div className={`p-3 rounded-lg ${colorClasses[color]}`}>

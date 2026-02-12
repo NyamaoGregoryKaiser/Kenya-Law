@@ -202,7 +202,7 @@ const AskAI: React.FC = () => {
             </div>
             <div>
               <h1 className="text-xl font-serif font-bold text-legal-text">Ask Legal AI</h1>
-              <p className="text-sm text-legal-text-muted">Uliza Sheria AI • Legal Research Assistant</p>
+              <p className="text-sm text-legal-text-muted">Legal Research Assistant</p>
             </div>
           </div>
           <div className="flex items-center space-x-4">
@@ -230,7 +230,7 @@ const AskAI: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-legal-text mb-2">
-              Your Role / Jukumu Lako
+              Your Role
             </label>
             <select 
               value={role} 
@@ -243,7 +243,7 @@ const AskAI: React.FC = () => {
           </div>
           <div>
             <label className="block text-sm font-medium text-legal-text mb-2">
-              Analysis Type / Aina ya Uchambuzi
+              Analysis Type
             </label>
             <select 
               value={presetId} 

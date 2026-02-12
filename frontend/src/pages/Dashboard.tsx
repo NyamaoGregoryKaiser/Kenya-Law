@@ -16,42 +16,10 @@ import MetricCard from '../components/MetricCard';
 
 const Dashboard: React.FC = () => {
   const metrics = [
-    {
-      title: 'Judgments Indexed',
-      titleSwahili: 'Hukumu Zilizopakiwa',
-      value: '12,456',
-      change: '+156',
-      changeType: 'increase' as const,
-      icon: BookOpen,
-      color: 'maroon' as const
-    },
-    {
-      title: 'Active Cases',
-      titleSwahili: 'Kesi Zinazoendelea',
-      value: '847',
-      change: '+23',
-      changeType: 'increase' as const,
-      icon: Scale,
-      color: 'gold' as const
-    },
-    {
-      title: 'Courts Covered',
-      titleSwahili: 'Mahakama Zilizofunikwa',
-      value: '5',
-      change: '',
-      changeType: 'neutral' as const,
-      icon: Building2,
-      color: 'maroon' as const
-    },
-    {
-      title: 'AI Queries Today',
-      titleSwahili: 'Maswali ya AI Leo',
-      value: '1,234',
-      change: '+89',
-      changeType: 'increase' as const,
-      icon: MessageSquare,
-      color: 'gold' as const
-    }
+    { title: 'Judgments Indexed', value: '12,456', change: '+156', changeType: 'increase' as const, icon: BookOpen, color: 'maroon' as const },
+    { title: 'Active Cases', value: '847', change: '+23', changeType: 'increase' as const, icon: Scale, color: 'gold' as const },
+    { title: 'Courts Covered', value: '5', change: '', changeType: 'neutral' as const, icon: Building2, color: 'maroon' as const },
+    { title: 'AI Queries Today', value: '1,234', change: '+89', changeType: 'increase' as const, icon: MessageSquare, color: 'gold' as const }
   ];
 
   const recentJudgments = [
@@ -126,7 +94,7 @@ const Dashboard: React.FC = () => {
             </div>
             <div>
               <h1 className="text-3xl font-serif font-bold tracking-tight">Kenya Law Reports AI</h1>
-              <p className="text-white/80 mt-1">Akili Bandia ya Ripoti za Sheria Kenya • Haki na Usawa</p>
+              <p className="text-white/80 mt-1">Legal intelligence and case law for Kenya</p>
             </div>
           </div>
           <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -142,8 +110,7 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
               <p className="text-sm text-white/70">Motto</p>
-              <p className="mt-1 font-serif font-semibold text-legal-gold">Haki na Usawa</p>
-              <p className="text-xs text-white/60">Justice and Equality</p>
+              <p className="mt-1 font-serif font-semibold text-legal-gold">Justice and Equality</p>
             </div>
           </div>
         </div>
@@ -154,7 +121,7 @@ const Dashboard: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-serif font-bold text-legal-text">Judicial Dashboard / Dashibodi ya Mahakama</h2>
+          <h2 className="text-2xl font-serif font-bold text-legal-text">Judicial Dashboard</h2>
           <p className="text-legal-text-muted mt-1">Legal intelligence and case law overview</p>
         </div>
         <div className="flex items-center space-x-2 text-sm text-legal-text-muted">
@@ -178,7 +145,6 @@ const Dashboard: React.FC = () => {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-xl font-serif font-semibold text-legal-text">Court Distribution</h3>
-                <p className="text-sm text-legal-text-muted">Usambazaji wa Mahakama</p>
               </div>
               <TrendingUp className="w-5 h-5 text-legal-gold" />
             </div>
@@ -204,7 +170,6 @@ const Dashboard: React.FC = () => {
             <div className="mt-6 pt-6 border-t border-legal-border">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="font-semibold text-legal-text">Courts by Region</h4>
-                <span className="text-sm text-legal-text-muted">Mahakama kwa Mkoa</span>
               </div>
               <MapWidget />
             </div>
@@ -216,7 +181,6 @@ const Dashboard: React.FC = () => {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-xl font-serif font-semibold text-legal-text">Recent Judgments</h3>
-              <p className="text-sm text-legal-text-muted">Hukumu za Hivi Karibuni</p>
             </div>
             <Gavel className="w-5 h-5 text-legal-gold" />
           </div>
@@ -257,35 +221,31 @@ const Dashboard: React.FC = () => {
       {/* Quick Actions */}
       <div className="legal-card p-6">
         <h3 className="text-xl font-serif font-semibold text-legal-text mb-2">Quick Actions</h3>
-        <p className="text-sm text-legal-text-muted mb-4">Vitendo vya Haraka</p>
-        
+        <p className="text-sm text-legal-text-muted mb-4">Shortcuts</p>
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <button className="flex items-center space-x-3 p-4 rounded-lg btn-legal">
             <Search className="w-5 h-5" />
             <div className="text-left">
               <div className="font-medium">Search Case Law</div>
-              <div className="text-sm opacity-80">Tafuta Sheria</div>
             </div>
           </button>
           <button className="flex items-center space-x-3 p-4 rounded-lg btn-legal">
             <Scale className="w-5 h-5" />
             <div className="text-left">
               <div className="font-medium">Ask Legal AI</div>
-              <div className="text-sm opacity-80">Uliza Sheria AI</div>
             </div>
           </button>
           <button className="flex items-center space-x-3 p-4 rounded-lg btn-legal-maroon">
             <FileUp className="w-5 h-5" />
             <div className="text-left">
               <div className="font-medium">Upload Judgment</div>
-              <div className="text-sm opacity-80">Pakia Hukumu</div>
             </div>
           </button>
           <button className="flex items-center space-x-3 p-4 rounded-lg btn-legal">
             <FileText className="w-5 h-5" />
             <div className="text-left">
               <div className="font-medium">Generate Brief</div>
-              <div className="text-sm opacity-80">Tengeneza Muhtasari</div>
             </div>
           </button>
         </div>

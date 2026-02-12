@@ -11,36 +11,11 @@ import {
 
 const Sidebar: React.FC = () => {
   const menuItems = [
-    {
-      name: 'Dashboard',
-      nameSwahili: 'Dashibodi',
-      path: '/',
-      icon: LayoutDashboard
-    },
-    {
-      name: 'Ask Legal AI',
-      nameSwahili: 'Uliza Sheria AI',
-      path: '/ask-ai',
-      icon: Scale
-    },
-    {
-      name: 'Case Uploads',
-      nameSwahili: 'Pakia Kesi',
-      path: '/uploads',
-      icon: Upload
-    },
-    {
-      name: 'Legal Reports',
-      nameSwahili: 'Ripoti za Kisheria',
-      path: '/reports',
-      icon: FileText
-    },
-    {
-      name: 'Case Explorer',
-      nameSwahili: 'Tafuta Kesi',
-      path: '/explorer',
-      icon: BookOpen
-    }
+    { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+    { name: 'Ask Legal AI', path: '/ask-ai', icon: Scale },
+    { name: 'Case Uploads', path: '/uploads', icon: Upload },
+    { name: 'Legal Reports', path: '/reports', icon: FileText },
+    { name: 'Case Explorer', path: '/explorer', icon: BookOpen }
   ];
 
   return (
@@ -81,7 +56,6 @@ const Sidebar: React.FC = () => {
               <Icon className="w-5 h-5" />
               <div>
                 <div className="font-medium">{item.name}</div>
-                <div className="text-xs opacity-70">{item.nameSwahili}</div>
               </div>
             </NavLink>
           );
@@ -115,7 +89,7 @@ const Sidebar: React.FC = () => {
         <div className="text-center">
           <p className="text-xs text-white/50">Powered by</p>
           <p className="text-sm font-serif text-legal-gold">Kenya Law Reports</p>
-          <p className="text-xs text-white/40 mt-1">Haki na Usawa</p>
+          <p className="text-xs text-white/40 mt-1">Justice and Equality</p>
         </div>
       </div>
     </div>

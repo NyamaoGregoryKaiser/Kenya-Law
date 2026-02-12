@@ -20,7 +20,7 @@ const TopBar: React.FC = () => {
             />
             <div>
               <h2 className="text-xl font-serif font-bold text-legal-text">Kenya Law Reports AI</h2>
-              <span className="text-sm text-legal-text-muted">Akili Bandia ya Sheria • Legal Intelligence Platform</span>
+              <span className="text-sm text-legal-text-muted">Legal Intelligence Platform</span>
             </div>
           </div>
 

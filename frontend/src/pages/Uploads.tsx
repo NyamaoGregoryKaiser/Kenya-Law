@@ -187,7 +187,7 @@ const Uploads: React.FC = () => {
               Case & Statute Uploads
             </h1>
             <p className="text-legal-text-muted">
-              Pakia Hukumu na Sheria • Upload judgments for AI indexing
+              Upload judgments for AI indexing
             </p>
           </div>
         </div>

@@ -51,11 +51,11 @@ const Login: React.FC = () => {
             Kenya Law Reports AI
           </h1>
           <p className="text-white/70">
-            Akili Bandia ya Ripoti za Sheria Kenya
+            Legal intelligence for Kenya&apos;s law reports
           </p>
           <div className="mt-4 flex items-center justify-center gap-2">
             <BookOpen className="w-4 h-4 text-legal-gold" />
-            <span className="text-legal-gold text-sm font-medium">Haki na Usawa • Justice and Equality</span>
+            <span className="text-legal-gold text-sm font-medium">Justice and Equality</span>
           </div>
         </div>
 
@@ -121,7 +121,7 @@ const Login: React.FC = () => {
                   Signing In...
                 </span>
               ) : (
-                'Sign In / Ingia'
+                'Sign In'
               )}
             </button>
           </form>

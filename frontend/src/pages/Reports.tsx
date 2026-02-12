@@ -180,7 +180,7 @@ const Reports: React.FC = () => {
               Legal Reports & Briefs
             </h1>
             <p className="text-legal-text-muted">
-              Ripoti za Kisheria • Generate and manage legal analyses
+              Generate and manage legal analyses
             </p>
           </div>
         </div>

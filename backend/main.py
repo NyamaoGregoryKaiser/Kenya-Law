@@ -165,7 +165,7 @@ async def query_ai(
 			custom_system = (
 			"You are Kenya Law AI, an assistant for Kenyan law and jurisprudence. "
 			"Be accurate, concise, and practical. Explain relevant legal principles, case law, and statutes, "
-			"highlight important precedents, and clearly state assumptions. Use English with Swahili glossaries when helpful."
+			"highlight important precedents, and clearly state assumptions. Use clear, professional English."
 			)
 
 		# Use the RAG system to generate response
