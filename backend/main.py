@@ -217,15 +217,21 @@ async def list_documents(current_user: dict = Depends(get_current_user)):
 			logging.warning(f"Uploads directory does not exist: {upload_dir}")
 			return DocumentListResponse(documents=[])
 		
-		for name in os.listdir(upload_dir):
+		all_files = os.listdir(upload_dir)
+		logging.info(f"Found {len(all_files)} items in upload directory: {all_files}")
+		
+		for name in all_files:
 			path = os.path.join(upload_dir, name)
+			logging.debug(f"Checking item: {name}, path: {path}, isfile: {os.path.isfile(path)}")
 			if os.path.isfile(path):
 				try:
 					stat = os.stat(path)
+					logging.debug(f"Processing file {name}: size={stat.st_size}, mtime={stat.st_mtime}")
 					# Check if document is indexed in the vector store
 					# Wrap in try-except to prevent index check from breaking listing
 					try:
 						is_indexed = rag_system.is_document_indexed(name)
+						logging.debug(f"Document {name} indexed status: {is_indexed}")
 					except Exception as idx_error:
 						logging.warning(f"Could not check index status for {name}: {idx_error}")
 						is_indexed = False
@@ -236,8 +242,9 @@ async def list_documents(current_user: dict = Depends(get_current_user)):
 						uploaded_at=datetime.fromtimestamp(stat.st_mtime).isoformat(),
 						indexed=is_indexed
 					))
+					logging.debug(f"Added document {name} to list")
 				except Exception as e:
-					logging.error(f"Error processing file {name}: {e}")
+					logging.error(f"Error processing file {name}: {e}", exc_info=True)
 					continue
 		# newest first
 		documents.sort(key=lambda d: d.uploaded_at, reverse=True)
@@ -250,12 +257,14 @@ async def list_documents(current_user: dict = Depends(get_current_user)):
 async def delete_document(filename: str, current_user: dict = Depends(get_current_user)):
 	"""Delete a document from the server and vector store."""
 	try:
-		upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
+		upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
 		file_path = os.path.join(upload_dir, filename)
 		
 		# Security: prevent directory traversal
 		if not os.path.abspath(file_path).startswith(os.path.abspath(upload_dir)):
 			raise HTTPException(status_code=400, detail="Invalid filename")
+		
+		logging.info(f"Attempting to delete document {filename} from {file_path}")
 		
 		# Delete from vector store first
 		rag_system.delete_document(filename)
@@ -263,14 +272,15 @@ async def delete_document(filename: str, current_user: dict = Depends(get_curren
 		# Delete the file from disk
 		if os.path.exists(file_path):
 			os.remove(file_path)
-			logging.info(f"Deleted document {filename}")
+			logging.info(f"Successfully deleted document {filename} from disk")
 			return {"status": "deleted", "filename": filename}
 		else:
+			logging.warning(f"File {filename} not found at {file_path}")
 			raise HTTPException(status_code=404, detail="Document not found")
 	except HTTPException:
 		raise
 	except Exception as e:
-		logging.error(f"Failed to delete document {filename}: {e}")
+		logging.error(f"Failed to delete document {filename}: {e}", exc_info=True)
 		raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/upload", response_model=DocumentUploadResponse)
@@ -298,7 +308,19 @@ async def upload_document(
 		if not os.path.exists(file_path):
 			raise HTTPException(status_code=500, detail="File was not saved successfully")
 		
-		logging.info(f"Saved file {file.filename} to {file_path} ({len(content)} bytes)")
+		# Verify file size matches
+		saved_size = os.path.getsize(file_path)
+		if saved_size != len(content):
+			logging.warning(f"File size mismatch for {file.filename}: expected {len(content)}, got {saved_size}")
+		
+		logging.info(f"Saved file {file.filename} to {file_path} ({len(content)} bytes, verified: {saved_size} bytes)")
+		
+		# Verify file appears in directory listing
+		dir_files = os.listdir(upload_dir)
+		if file.filename not in dir_files:
+			logging.error(f"File {file.filename} not found in directory listing after save! Files in dir: {dir_files}")
+		else:
+			logging.debug(f"File {file.filename} confirmed in directory listing")
 		
 		# Index document using RAG system
 		metadata = {
