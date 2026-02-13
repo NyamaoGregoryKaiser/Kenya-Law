@@ -71,6 +71,19 @@ DEFAULT_PROMPTS: List[Dict[str, Any]] = [
 		"is_active": True,
 		"created_at": datetime.utcnow().isoformat(),
 		"updated_at": datetime.utcnow().isoformat()
+	},
+	{
+		"id": "comparative-law",
+		"title": "Comparative Case Law",
+		"description": "Compare legal approaches across different jurisdictions.",
+		"prompt_text": "Compare relevant legal approaches across jurisdictions. Focus on how Kenyan courts and Commonwealth/other jurisdictions have addressed similar issues.",
+		"visibility_scope": "global",
+		"roles_allowed": ["admin", "analyst", "researcher"],
+		"created_by": "system",
+		"version": 1,
+		"is_active": True,
+		"created_at": datetime.utcnow().isoformat(),
+		"updated_at": datetime.utcnow().isoformat()
 	}
 ]
 
@@ -82,10 +95,28 @@ def _ensure_store() -> None:
 			json.dump(DEFAULT_PROMPTS, f, ensure_ascii=False, indent=2)
 
 
+def _is_legacy_defense_prompts(prompts: List[Dict[str, Any]]) -> bool:
+	"""True if the store still has old PatriotAI/defense prompts (SITREP, KDF, etc.)."""
+	legacy_ids = {"sitrep", "intel-brief", "logistics", "after-action", "public-comm"}
+	for p in prompts:
+		if p.get("id") in legacy_ids:
+			return True
+		title = (p.get("title") or "").upper()
+		if "SITREP" in title or "KDF" in title or "AAR" in title:
+			return True
+	return False
+
+
 def load_prompts() -> List[Dict[str, Any]]:
 	_ensure_store()
 	with open(PROMPTS_PATH, 'r', encoding='utf-8') as f:
-		return json.load(f)
+		prompts = json.load(f)
+	# Migrate: replace old defense prompts with Kenya Law legal prompts
+	if _is_legacy_defense_prompts(prompts):
+		with open(PROMPTS_PATH, 'w', encoding='utf-8') as f:
+			json.dump(DEFAULT_PROMPTS, f, ensure_ascii=False, indent=2)
+		return DEFAULT_PROMPTS
+	return prompts
 
 
 def save_prompts(prompts: List[Dict[str, Any]]) -> None:
