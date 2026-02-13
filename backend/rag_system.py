@@ -189,19 +189,43 @@ class PatriotAIRAGSystem:
 		"""Check if a document is indexed in the vector store by filename."""
 		try:
 			if self.vectorstore is None:
+				logger.debug(f"Vector store not initialized, {filename} not indexed")
 				return False
 			# Search for documents with this filename in metadata
 			# Use a simple search to check if any chunks exist for this filename
 			if hasattr(self.vectorstore, '_collection'):
-				# Query Chroma collection directly
-				results = self.vectorstore._collection.get(where={"filename": filename}, limit=1)
-				return len(results.get("ids", [])) > 0 if results else False
+				try:
+					# Query Chroma collection directly using where clause
+					results = self.vectorstore._collection.get(where={"filename": filename}, limit=1)
+					if results and isinstance(results, dict):
+						ids = results.get("ids", [])
+						is_indexed = len(ids) > 0
+						if is_indexed:
+							logger.debug(f"Document {filename} is indexed ({len(ids)} chunks found)")
+						return is_indexed
+					return False
+				except Exception as coll_error:
+					logger.warning(f"Chroma collection query failed for {filename}: {coll_error}")
+					# Fallback to search method
+					try:
+						results = self.vectorstore.similarity_search("", k=1000)
+						for doc in results:
+							if doc.metadata.get("filename") == filename:
+								logger.debug(f"Document {filename} found via search fallback")
+								return True
+					except Exception as search_error:
+						logger.warning(f"Search fallback also failed for {filename}: {search_error}")
+					return False
 			else:
 				# Fallback: try searching with empty query and check metadata
-				results = self.vectorstore.similarity_search("", k=1000)
-				for doc in results:
-					if doc.metadata.get("filename") == filename:
-						return True
+				try:
+					results = self.vectorstore.similarity_search("", k=1000)
+					for doc in results:
+						if doc.metadata.get("filename") == filename:
+							logger.debug(f"Document {filename} found via search")
+							return True
+				except Exception as search_error:
+					logger.warning(f"Search failed for {filename}: {search_error}")
 				return False
 		except Exception as e:
 			logger.warning(f"Failed to check if document {filename} is indexed: {e}")

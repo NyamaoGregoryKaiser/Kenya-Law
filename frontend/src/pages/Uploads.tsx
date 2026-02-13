@@ -61,7 +61,9 @@ const Uploads: React.FC = () => {
   const fetchDocuments = useCallback(async () => {
     try {
       const res = await axios.get(`${API_BASE}/documents`);
-      const list = (res.data?.documents || []).map((d: { filename: string; size: number; uploaded_at: string; indexed: boolean }) => ({
+      const documents = res.data?.documents || [];
+      console.log(`Fetched ${documents.length} documents from API`);
+      const list = documents.map((d: { filename: string; size: number; uploaded_at: string; indexed: boolean }) => ({
         id: d.filename,
         filename: d.filename,
         size: d.size,
@@ -69,9 +71,12 @@ const Uploads: React.FC = () => {
         status: d.indexed ? 'indexed' as const : 'uploaded' as const,
         uploadedAt: new Date(d.uploaded_at)
       }));
+      console.log(`Mapped ${list.length} documents, setting state`);
       setDocuments(list);
-    } catch {
-      setDocuments([]);
+    } catch (error: any) {
+      console.error('Error fetching documents:', error);
+      toast.error('Failed to load documents. Please refresh the page.');
+      // Don't clear documents on error - keep existing ones
     } finally {
       setLoadingList(false);
     }
