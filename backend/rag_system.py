@@ -55,6 +55,25 @@ except Exception:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rag_system")
 
+# Ensure NLTK data is available for unstructured (DOC/DOCX processing)
+def _ensure_nltk_data():
+	"""Download required NLTK data if missing (needed by unstructured for DOC/DOCX)."""
+	try:
+		import nltk
+		nltk_data_dir = os.path.join(os.path.dirname(__file__), "nltk_data")
+		os.makedirs(nltk_data_dir, exist_ok=True)
+		nltk.data.path.insert(0, nltk_data_dir)
+		try:
+			nltk.data.find('tokenizers/punkt_tab')
+		except LookupError:
+			logger.info("Downloading NLTK punkt_tab data (required for DOC/DOCX processing)...")
+			nltk.download('punkt_tab', quiet=True, download_dir=nltk_data_dir)
+			logger.info("NLTK data downloaded successfully")
+	except Exception as e:
+		logger.warning(f"Could not ensure NLTK data (DOC/DOCX may fail): {e}")
+
+_ensure_nltk_data()
+
 class PatriotAIRAGSystem:
 	def __init__(self):
 		self.embeddings = None
