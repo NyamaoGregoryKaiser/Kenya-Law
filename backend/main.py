@@ -43,6 +43,11 @@ except ImportError:
 # Initialize FastAPI app
 app = create_app()
 
+# Log environment status at startup
+import os
+logging.info(f"GOOGLE_API_KEY present: {bool(os.getenv('GOOGLE_API_KEY'))}")
+logging.info(f"SERPAPI_API_KEY present: {bool(os.getenv('SERPAPI_API_KEY'))}")
+
 # Add CORS middleware
 app.add_middleware(
 	CORSMiddleware,
