@@ -115,17 +115,12 @@ class PatriotAIRAGSystem:
 				self.vectorstore = None
 				return
 			
-			# Try default model first (newer langchain-google-genai handles this better)
-			# If GOOGLE_EMBEDDING_MODEL is set, use it; otherwise let it use default
-			embedding_model = os.getenv("GOOGLE_EMBEDDING_MODEL")
+			# langchain-google-genai 4.2.0 requires model parameter
+			# Use gemini-embedding-001 (default embedding model)
+			embedding_model = os.getenv("GOOGLE_EMBEDDING_MODEL", "models/gemini-embedding-001")
 			try:
-				if embedding_model:
-					self.embeddings = EmbeddingsClass(google_api_key=GOOGLE_API_KEY, model=embedding_model)
-					logger.info(f"Initialized embeddings with model: {embedding_model}")
-				else:
-					# Use default model (gemini-embedding-001)
-					self.embeddings = EmbeddingsClass(google_api_key=GOOGLE_API_KEY)
-					logger.info("Initialized embeddings with default model (gemini-embedding-001)")
+				self.embeddings = EmbeddingsClass(google_api_key=GOOGLE_API_KEY, model=embedding_model)
+				logger.info(f"Initialized embeddings with model: {embedding_model}")
 				
 				persist_directory = "./chroma_db"
 				self.vectorstore = Chroma(persist_directory=persist_directory, embedding_function=self.embeddings)
