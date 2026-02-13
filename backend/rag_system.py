@@ -81,7 +81,9 @@ class PatriotAIRAGSystem:
 	def _initialize_vectorstore(self):
 		try:
 			if EMBED_OK and EmbeddingsClass is not None:
-				self.embeddings = EmbeddingsClass(google_api_key=GOOGLE_API_KEY, model="models/text-embedding-004")
+				# Use text-embedding-004 (without models/ prefix for embeddings)
+				embedding_model = os.getenv("GOOGLE_EMBEDDING_MODEL", "text-embedding-004")
+				self.embeddings = EmbeddingsClass(google_api_key=GOOGLE_API_KEY, model=embedding_model)
 				persist_directory = "./chroma_db"
 				self.vectorstore = Chroma(persist_directory=persist_directory, embedding_function=self.embeddings)
 				logger.info("Vector store initialized (Google embeddings)")
