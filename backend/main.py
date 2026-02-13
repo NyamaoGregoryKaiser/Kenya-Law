@@ -225,6 +225,33 @@ async def list_documents(current_user: dict = Depends(get_current_user)):
 	documents.sort(key=lambda d: d.uploaded_at, reverse=True)
 	return DocumentListResponse(documents=documents)
 
+@app.delete("/api/documents/{filename}")
+async def delete_document(filename: str, current_user: dict = Depends(get_current_user)):
+	"""Delete a document from the server and vector store."""
+	try:
+		upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
+		file_path = os.path.join(upload_dir, filename)
+		
+		# Security: prevent directory traversal
+		if not os.path.abspath(file_path).startswith(os.path.abspath(upload_dir)):
+			raise HTTPException(status_code=400, detail="Invalid filename")
+		
+		# Delete from vector store first
+		rag_system.delete_document(filename)
+		
+		# Delete the file from disk
+		if os.path.exists(file_path):
+			os.remove(file_path)
+			logging.info(f"Deleted document {filename}")
+			return {"status": "deleted", "filename": filename}
+		else:
+			raise HTTPException(status_code=404, detail="Document not found")
+	except HTTPException:
+		raise
+	except Exception as e:
+		logging.error(f"Failed to delete document {filename}: {e}")
+		raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/upload", response_model=DocumentUploadResponse)
 async def upload_document(
 	file: UploadFile = File(...),

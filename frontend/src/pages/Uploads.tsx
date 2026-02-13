@@ -171,9 +171,17 @@ const Uploads: React.FC = () => {
     disabled: isUploading || showMetadataForm
   });
 
-  const deleteDocument = (id: string) => {
-    setDocuments(prev => prev.filter(doc => doc.id !== id));
-    toast.success('Document removed');
+  const deleteDocument = async (id: string) => {
+    try {
+      // id is the filename
+      await axios.delete(`${API_BASE}/documents/${encodeURIComponent(id)}`);
+      setDocuments(prev => prev.filter(doc => doc.id !== id));
+      toast.success('Document deleted successfully');
+      // Refresh the list to ensure consistency
+      await fetchDocuments();
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to delete document');
+    }
   };
 
   const formatFileSize = (bytes: number) => {

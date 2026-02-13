@@ -185,6 +185,26 @@ class PatriotAIRAGSystem:
 			logger.error(f"Failed to index document {file_path}: {e}")
 			return False, str(e)
 	
+	def delete_document(self, filename: str) -> bool:
+		"""Delete a document from the vector store by filename. Returns True if successful."""
+		try:
+			if self.vectorstore is None:
+				logger.warning("Vector store not initialized; cannot delete from vector store")
+				return False
+			# Try to delete documents matching the filename in metadata
+			# Access Chroma collection directly for metadata-based deletion
+			if hasattr(self.vectorstore, '_collection'):
+				self.vectorstore._collection.delete(where={"filename": filename})
+				logger.info(f"Deleted document {filename} from vector store")
+				return True
+			else:
+				logger.warning(f"Could not access Chroma collection to delete {filename}")
+				return False
+		except Exception as e:
+			logger.warning(f"Failed to delete document {filename} from vector store: {e}")
+			# Return False but don't raise - file deletion should still proceed
+			return False
+	
 	def search_documents(self, query: str, k: int = 5):
 		try:
 			if not self.vectorstore:
