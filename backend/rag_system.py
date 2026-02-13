@@ -215,13 +215,17 @@ class PatriotAIRAGSystem:
 	def _invoke_with_fallback(self, prompt: str) -> str:
 		# Try primary model, then fallback on 429 or quota errors
 		try:
-			return str(self.llm.invoke(prompt))
+			response = self.llm.invoke(prompt)
+			# Extract only the content, not the metadata
+			return response.content if hasattr(response, 'content') else str(response)
 		except Exception as e:
 			msg = str(e).lower()
 			if any(x in msg for x in ["429", "quota", "rate", "per minute", "per day"]) and getattr(self, 'llm_fallback', None):
 				logger.warning("Primary model quota hit; switching to fallback model")
 				try:
-					return str(self.llm_fallback.invoke(prompt))
+					response = self.llm_fallback.invoke(prompt)
+					# Extract only the content, not the metadata
+					return response.content if hasattr(response, 'content') else str(response)
 				except Exception as e2:
 					logger.error(f"Fallback model also failed: {e2}")
 					raise
