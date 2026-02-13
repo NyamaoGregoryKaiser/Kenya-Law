@@ -43,6 +43,14 @@ except ImportError:
 # Initialize FastAPI app
 app = create_app()
 
+# Add request logging middleware to debug DELETE requests
+@app.middleware("http")
+async def log_requests(request, call_next):
+	logging.info(f"Incoming request: {request.method} {request.url.path}")
+	response = await call_next(request)
+	logging.info(f"Response: {request.method} {request.url.path} -> {response.status_code}")
+	return response
+
 # Log environment status at startup
 import os
 logging.info(f"GOOGLE_API_KEY present: {bool(os.getenv('GOOGLE_API_KEY'))}")

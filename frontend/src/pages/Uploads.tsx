@@ -183,20 +183,36 @@ const Uploads: React.FC = () => {
     try {
       // id is the filename - encode it properly for URL
       const encodedFilename = encodeURIComponent(id);
-      console.log(`Deleting document: ${id} (encoded: ${encodedFilename})`);
-      const response = await axios.delete(`${API_BASE}/documents/${encodedFilename}`);
-      console.log('Delete response:', response.data);
+      const deleteUrl = `${API_BASE}/documents/${encodedFilename}`;
+      console.log(`Deleting document: ${id}`);
+      console.log(`Encoded filename: ${encodedFilename}`);
+      console.log(`Delete URL: ${deleteUrl}`);
+      console.log(`API_BASE: ${API_BASE}`);
       
-      // Only remove from state if delete was successful
-      setDocuments(prev => prev.filter(doc => doc.id !== id));
-      toast.success('Document deleted successfully');
+      const response = await axios.delete(deleteUrl);
+      console.log('Delete response status:', response.status);
+      console.log('Delete response data:', response.data);
       
-      // Refresh the list to ensure consistency
-      await fetchDocuments();
+      if (response.status === 200 || response.status === 204) {
+        // Only remove from state if delete was successful
+        setDocuments(prev => prev.filter(doc => doc.id !== id));
+        toast.success('Document deleted successfully');
+        
+        // Refresh the list to ensure consistency
+        await fetchDocuments();
+      } else {
+        throw new Error(`Unexpected status code: ${response.status}`);
+      }
     } catch (error: any) {
-      console.error('Delete error:', error);
-      const errorMessage = error.response?.data?.detail || error.message || 'Failed to delete document';
-      toast.error(errorMessage);
+      console.error('Delete error details:', {
+        message: error.message,
+        response: error.response,
+        status: error.response?.status,
+        data: error.response?.data,
+        url: error.config?.url
+      });
+      const errorMessage = error.response?.data?.detail || error.response?.statusText || error.message || 'Failed to delete document';
+      toast.error(`Delete failed: ${errorMessage}`);
       // Don't remove from state if delete failed
     }
   };
