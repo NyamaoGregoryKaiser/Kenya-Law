@@ -61,12 +61,12 @@ const Uploads: React.FC = () => {
   const fetchDocuments = useCallback(async () => {
     try {
       const res = await axios.get(`${API_BASE}/documents`);
-      const list = (res.data?.documents || []).map((d: { filename: string; size: number; uploaded_at: string }) => ({
+      const list = (res.data?.documents || []).map((d: { filename: string; size: number; uploaded_at: string; indexed: boolean }) => ({
         id: d.filename,
         filename: d.filename,
         size: d.size,
         type: '',
-        status: 'uploaded' as const,
+        status: d.indexed ? 'indexed' as const : 'uploaded' as const,
         uploadedAt: new Date(d.uploaded_at)
       }));
       setDocuments(list);
@@ -122,6 +122,9 @@ const Uploads: React.FC = () => {
         const msg = response.data.index_message || 'Indexing unavailable. Set GOOGLE_API_KEY and install unstructured for DOC/DOCX.';
         toast.success(`${file.name} uploaded. ${msg}`, { duration: 6000 });
       }
+      
+      // Refresh document list to ensure accurate status from backend
+      await fetchDocuments();
     } catch (error) {
       setDocuments(prev =>
         prev.map(doc =>

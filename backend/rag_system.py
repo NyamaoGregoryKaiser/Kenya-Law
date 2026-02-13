@@ -185,6 +185,28 @@ class PatriotAIRAGSystem:
 			logger.error(f"Failed to index document {file_path}: {e}")
 			return False, str(e)
 	
+	def is_document_indexed(self, filename: str) -> bool:
+		"""Check if a document is indexed in the vector store by filename."""
+		try:
+			if self.vectorstore is None:
+				return False
+			# Search for documents with this filename in metadata
+			# Use a simple search to check if any chunks exist for this filename
+			if hasattr(self.vectorstore, '_collection'):
+				# Query Chroma collection directly
+				results = self.vectorstore._collection.get(where={"filename": filename}, limit=1)
+				return len(results.get("ids", [])) > 0 if results else False
+			else:
+				# Fallback: try searching with empty query and check metadata
+				results = self.vectorstore.similarity_search("", k=1000)
+				for doc in results:
+					if doc.metadata.get("filename") == filename:
+						return True
+				return False
+		except Exception as e:
+			logger.warning(f"Failed to check if document {filename} is indexed: {e}")
+			return False
+	
 	def delete_document(self, filename: str) -> bool:
 		"""Delete a document from the vector store by filename. Returns True if successful."""
 		try:

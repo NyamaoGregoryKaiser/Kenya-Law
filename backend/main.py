@@ -89,6 +89,7 @@ class DocumentItem(BaseModel):
 	filename: str
 	size: int
 	uploaded_at: str
+	indexed: bool = False
 
 class DocumentListResponse(BaseModel):
 	documents: List[DocumentItem]
@@ -209,20 +210,40 @@ async def query_ai(
 @app.get("/api/documents", response_model=DocumentListResponse)
 async def list_documents(current_user: dict = Depends(get_current_user)):
 	"""List uploaded documents (for Uploads page)."""
-	upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
+	upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
 	documents = []
-	if os.path.isdir(upload_dir):
+	try:
+		if not os.path.isdir(upload_dir):
+			logging.warning(f"Uploads directory does not exist: {upload_dir}")
+			return DocumentListResponse(documents=[])
+		
 		for name in os.listdir(upload_dir):
 			path = os.path.join(upload_dir, name)
 			if os.path.isfile(path):
-				stat = os.stat(path)
-				documents.append(DocumentItem(
-					filename=name,
-					size=stat.st_size,
-					uploaded_at=datetime.fromtimestamp(stat.st_mtime).isoformat()
-				))
-	# newest first
-	documents.sort(key=lambda d: d.uploaded_at, reverse=True)
+				try:
+					stat = os.stat(path)
+					# Check if document is indexed in the vector store
+					# Wrap in try-except to prevent index check from breaking listing
+					try:
+						is_indexed = rag_system.is_document_indexed(name)
+					except Exception as idx_error:
+						logging.warning(f"Could not check index status for {name}: {idx_error}")
+						is_indexed = False
+					
+					documents.append(DocumentItem(
+						filename=name,
+						size=stat.st_size,
+						uploaded_at=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+						indexed=is_indexed
+					))
+				except Exception as e:
+					logging.error(f"Error processing file {name}: {e}")
+					continue
+		# newest first
+		documents.sort(key=lambda d: d.uploaded_at, reverse=True)
+		logging.info(f"Listed {len(documents)} documents from {upload_dir}")
+	except Exception as e:
+		logging.error(f"Error listing documents: {e}", exc_info=True)
 	return DocumentListResponse(documents=documents)
 
 @app.delete("/api/documents/{filename}")
@@ -261,12 +282,23 @@ async def upload_document(
 	Upload and index documents for RAG
 	"""
 	try:
-		upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
+		upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
 		os.makedirs(upload_dir, exist_ok=True)
 		file_path = os.path.join(upload_dir, file.filename)
+		
+		# Security: prevent directory traversal
+		if not os.path.abspath(file_path).startswith(os.path.abspath(upload_dir)):
+			raise HTTPException(status_code=400, detail="Invalid filename")
+		
 		with open(file_path, "wb") as buffer:
 			content = await file.read()
 			buffer.write(content)
+		
+		# Verify file was saved
+		if not os.path.exists(file_path):
+			raise HTTPException(status_code=500, detail="File was not saved successfully")
+		
+		logging.info(f"Saved file {file.filename} to {file_path} ({len(content)} bytes)")
 		
 		# Index document using RAG system
 		metadata = {
@@ -286,8 +318,10 @@ async def upload_document(
 			indexed=indexed,
 			index_message=index_message
 		)
+	except HTTPException:
+		raise
 	except Exception as e:
-		logging.error(f"Document upload failed: {e}")
+		logging.error(f"Document upload failed: {e}", exc_info=True)
 		raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/map/events", response_model=List[MapEvent])
