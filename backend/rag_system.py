@@ -81,8 +81,8 @@ class PatriotAIRAGSystem:
 	def _initialize_vectorstore(self):
 		try:
 			if EMBED_OK and EmbeddingsClass is not None:
-				# Use text-embedding-004 (without models/ prefix for embeddings)
-				embedding_model = os.getenv("GOOGLE_EMBEDDING_MODEL", "text-embedding-004")
+				# Gemini embedding model (text-embedding-004 can 404; gemini-embedding-001 is supported)
+				embedding_model = os.getenv("GOOGLE_EMBEDDING_MODEL", "models/gemini-embedding-001")
 				self.embeddings = EmbeddingsClass(google_api_key=GOOGLE_API_KEY, model=embedding_model)
 				persist_directory = "./chroma_db"
 				self.vectorstore = Chroma(persist_directory=persist_directory, embedding_function=self.embeddings)
@@ -116,14 +116,15 @@ class PatriotAIRAGSystem:
 	def _split_documents(self, documents):
 		return RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(documents)
 	
-	def index_document(self, file_path: str, metadata: Dict[str, Any] = None) -> bool:
+	def index_document(self, file_path: str, metadata: Dict[str, Any] = None):
+		"""Returns (success: bool, message: str)."""
 		try:
 			if self.vectorstore is None:
 				logger.warning("Vector store not initialized; skipping index")
-				return False
+				return False, "Vector store not initialized. Check GOOGLE_API_KEY and server logs."
 			documents = self._load_document(file_path)
 			if not documents:
-				return False
+				return False, "Could not load document (install 'unstructured' for DOC/DOCX, or check file format)."
 			split_docs = self._split_documents(documents)
 			if metadata:
 				for d in split_docs:
@@ -131,10 +132,10 @@ class PatriotAIRAGSystem:
 			self.vectorstore.add_documents(split_docs)
 			self.vectorstore.persist()
 			logger.info(f"Successfully indexed {file_path}")
-			return True
+			return True, "Indexed for AI search."
 		except Exception as e:
 			logger.error(f"Failed to index document {file_path}: {e}")
-			return False
+			return False, str(e)
 	
 	def search_documents(self, query: str, k: int = 5):
 		try:

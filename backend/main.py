@@ -78,6 +78,7 @@ class DocumentUploadResponse(BaseModel):
 	filename: str
 	status: str
 	indexed: bool
+	index_message: Optional[str] = None
 
 class DocumentItem(BaseModel):
 	filename: str
@@ -243,14 +244,15 @@ async def upload_document(
 			"file_size": len(content)
 		}
 		
-		indexed = rag_system.index_document(file_path, metadata)
+		indexed, index_message = rag_system.index_document(file_path, metadata)
 		document_id = f"doc_{datetime.now().timestamp()}"
 		
 		return DocumentUploadResponse(
 			document_id=document_id,
 			filename=file.filename,
 			status="uploaded",
-			indexed=indexed
+			indexed=indexed,
+			index_message=index_message
 		)
 	except Exception as e:
 		logging.error(f"Document upload failed: {e}")

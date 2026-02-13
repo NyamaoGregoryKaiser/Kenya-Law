@@ -119,7 +119,8 @@ const Uploads: React.FC = () => {
       if (response.data.indexed) {
         toast.success(`${file.name} uploaded and indexed for AI search`);
       } else {
-        toast.success(`${file.name} uploaded. Set GOOGLE_API_KEY on server to enable AI indexing.`);
+        const msg = response.data.index_message || 'Indexing unavailable. Set GOOGLE_API_KEY and install unstructured for DOC/DOCX.';
+        toast.success(`${file.name} uploaded. ${msg}`, { duration: 6000 });
       }
     } catch (error) {
       setDocuments(prev =>
