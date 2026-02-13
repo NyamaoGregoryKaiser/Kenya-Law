@@ -105,10 +105,20 @@ class PatriotAIRAGSystem:
 	
 	def _initialize_vectorstore(self):
 		try:
-			if EMBED_OK and EmbeddingsClass is not None:
-				# Try default model first (newer langchain-google-genai handles this better)
-				# If GOOGLE_EMBEDDING_MODEL is set, use it; otherwise let it use default
-				embedding_model = os.getenv("GOOGLE_EMBEDDING_MODEL")
+			if not GOOGLE_API_KEY:
+				logger.warning("GOOGLE_API_KEY not set; embeddings disabled")
+				self.vectorstore = None
+				return
+			
+			if not EMBED_OK or EmbeddingsClass is None:
+				logger.warning("GoogleGenerativeAIEmbeddings not available; embeddings disabled")
+				self.vectorstore = None
+				return
+			
+			# Try default model first (newer langchain-google-genai handles this better)
+			# If GOOGLE_EMBEDDING_MODEL is set, use it; otherwise let it use default
+			embedding_model = os.getenv("GOOGLE_EMBEDDING_MODEL")
+			try:
 				if embedding_model:
 					self.embeddings = EmbeddingsClass(google_api_key=GOOGLE_API_KEY, model=embedding_model)
 					logger.info(f"Initialized embeddings with model: {embedding_model}")
@@ -116,14 +126,15 @@ class PatriotAIRAGSystem:
 					# Use default model (gemini-embedding-001)
 					self.embeddings = EmbeddingsClass(google_api_key=GOOGLE_API_KEY)
 					logger.info("Initialized embeddings with default model (gemini-embedding-001)")
+				
 				persist_directory = "./chroma_db"
 				self.vectorstore = Chroma(persist_directory=persist_directory, embedding_function=self.embeddings)
 				logger.info("Vector store initialized (Google embeddings)")
-			else:
+			except Exception as embed_error:
+				logger.error(f"Failed to initialize embeddings: {embed_error}", exc_info=True)
 				self.vectorstore = None
-				logger.warning("Embeddings disabled (no Google embeddings). Vector search off.")
 		except Exception as e:
-			logger.warning(f"Vector store unavailable: {e}")
+			logger.error(f"Vector store initialization failed: {e}", exc_info=True)
 			self.vectorstore = None
 	
 	def _load_document(self, file_path: str):
