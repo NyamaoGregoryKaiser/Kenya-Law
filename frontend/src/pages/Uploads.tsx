@@ -181,14 +181,23 @@ const Uploads: React.FC = () => {
 
   const deleteDocument = async (id: string) => {
     try {
-      // id is the filename
-      await axios.delete(`${API_BASE}/documents/${encodeURIComponent(id)}`);
+      // id is the filename - encode it properly for URL
+      const encodedFilename = encodeURIComponent(id);
+      console.log(`Deleting document: ${id} (encoded: ${encodedFilename})`);
+      const response = await axios.delete(`${API_BASE}/documents/${encodedFilename}`);
+      console.log('Delete response:', response.data);
+      
+      // Only remove from state if delete was successful
       setDocuments(prev => prev.filter(doc => doc.id !== id));
       toast.success('Document deleted successfully');
+      
       // Refresh the list to ensure consistency
       await fetchDocuments();
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to delete document');
+      console.error('Delete error:', error);
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to delete document';
+      toast.error(errorMessage);
+      // Don't remove from state if delete failed
     }
   };
 

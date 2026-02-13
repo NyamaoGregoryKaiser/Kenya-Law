@@ -222,16 +222,15 @@ async def list_documents(current_user: dict = Depends(get_current_user)):
 		
 		for name in all_files:
 			path = os.path.join(upload_dir, name)
-			logging.debug(f"Checking item: {name}, path: {path}, isfile: {os.path.isfile(path)}")
 			if os.path.isfile(path):
 				try:
 					stat = os.stat(path)
-					logging.debug(f"Processing file {name}: size={stat.st_size}, mtime={stat.st_mtime}")
+					logging.info(f"Processing file {name}: size={stat.st_size}")
 					# Check if document is indexed in the vector store
 					# Wrap in try-except to prevent index check from breaking listing
 					try:
 						is_indexed = rag_system.is_document_indexed(name)
-						logging.debug(f"Document {name} indexed status: {is_indexed}")
+						logging.info(f"Document {name} indexed status: {is_indexed}")
 					except Exception as idx_error:
 						logging.warning(f"Could not check index status for {name}: {idx_error}")
 						is_indexed = False
@@ -242,7 +241,7 @@ async def list_documents(current_user: dict = Depends(get_current_user)):
 						uploaded_at=datetime.fromtimestamp(stat.st_mtime).isoformat(),
 						indexed=is_indexed
 					))
-					logging.debug(f"Added document {name} to list")
+					logging.info(f"Added document {name} to list (total: {len(documents)})")
 				except Exception as e:
 					logging.error(f"Error processing file {name}: {e}", exc_info=True)
 					continue
@@ -257,26 +256,58 @@ async def list_documents(current_user: dict = Depends(get_current_user)):
 async def delete_document(filename: str, current_user: dict = Depends(get_current_user)):
 	"""Delete a document from the server and vector store."""
 	try:
+		# Decode URL-encoded filename
+		from urllib.parse import unquote
+		decoded_filename = unquote(filename)
+		logging.info(f"Delete request received for: {filename} (decoded: {decoded_filename})")
+		
 		upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
-		file_path = os.path.join(upload_dir, filename)
+		file_path = os.path.join(upload_dir, decoded_filename)
 		
 		# Security: prevent directory traversal
-		if not os.path.abspath(file_path).startswith(os.path.abspath(upload_dir)):
+		abs_file_path = os.path.abspath(file_path)
+		abs_upload_dir = os.path.abspath(upload_dir)
+		if not abs_file_path.startswith(abs_upload_dir):
+			logging.error(f"Security check failed: {abs_file_path} not in {abs_upload_dir}")
 			raise HTTPException(status_code=400, detail="Invalid filename")
 		
-		logging.info(f"Attempting to delete document {filename} from {file_path}")
+		logging.info(f"Attempting to delete document {decoded_filename} from {file_path}")
+		
+		# Check if file exists before attempting deletion
+		if not os.path.exists(file_path):
+			logging.warning(f"File {decoded_filename} not found at {file_path}")
+			# List files in directory to help debug
+			if os.path.isdir(upload_dir):
+				existing_files = os.listdir(upload_dir)
+				logging.info(f"Files in upload directory: {existing_files}")
+			raise HTTPException(status_code=404, detail=f"Document not found: {decoded_filename}")
 		
 		# Delete from vector store first
-		rag_system.delete_document(filename)
+		try:
+			rag_system.delete_document(decoded_filename)
+			logging.info(f"Deleted {decoded_filename} from vector store")
+		except Exception as vec_error:
+			logging.warning(f"Failed to delete {decoded_filename} from vector store: {vec_error}")
+			# Continue with file deletion even if vector store deletion fails
 		
 		# Delete the file from disk
-		if os.path.exists(file_path):
+		try:
 			os.remove(file_path)
-			logging.info(f"Successfully deleted document {filename} from disk")
-			return {"status": "deleted", "filename": filename}
-		else:
-			logging.warning(f"File {filename} not found at {file_path}")
-			raise HTTPException(status_code=404, detail="Document not found")
+			logging.info(f"Successfully deleted document {decoded_filename} from disk at {file_path}")
+			
+			# Verify deletion
+			if os.path.exists(file_path):
+				logging.error(f"File {decoded_filename} still exists after deletion attempt!")
+				raise HTTPException(status_code=500, detail="File deletion failed")
+			
+			logging.info(f"Deletion verified: {decoded_filename} no longer exists")
+			return {"status": "deleted", "filename": decoded_filename}
+		except PermissionError as perm_error:
+			logging.error(f"Permission denied deleting {decoded_filename}: {perm_error}")
+			raise HTTPException(status_code=403, detail="Permission denied")
+		except OSError as os_error:
+			logging.error(f"OS error deleting {decoded_filename}: {os_error}")
+			raise HTTPException(status_code=500, detail=f"Failed to delete file: {os_error}")
 	except HTTPException:
 		raise
 	except Exception as e:
@@ -317,10 +348,11 @@ async def upload_document(
 		
 		# Verify file appears in directory listing
 		dir_files = os.listdir(upload_dir)
+		logging.info(f"Directory listing after save: {len(dir_files)} files: {dir_files}")
 		if file.filename not in dir_files:
 			logging.error(f"File {file.filename} not found in directory listing after save! Files in dir: {dir_files}")
 		else:
-			logging.debug(f"File {file.filename} confirmed in directory listing")
+			logging.info(f"File {file.filename} confirmed in directory listing")
 		
 		# Index document using RAG system
 		metadata = {
