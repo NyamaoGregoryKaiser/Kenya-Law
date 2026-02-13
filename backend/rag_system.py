@@ -100,9 +100,16 @@ class PatriotAIRAGSystem:
 	def _initialize_vectorstore(self):
 		try:
 			if EMBED_OK and EmbeddingsClass is not None:
-				# Gemini embedding model - use gemini-embedding-001 (langchain adds models/ prefix if needed)
-				embedding_model = os.getenv("GOOGLE_EMBEDDING_MODEL", "gemini-embedding-001")
-				self.embeddings = EmbeddingsClass(google_api_key=GOOGLE_API_KEY, model=embedding_model)
+				# Try default model first (newer langchain-google-genai handles this better)
+				# If GOOGLE_EMBEDDING_MODEL is set, use it; otherwise let it use default
+				embedding_model = os.getenv("GOOGLE_EMBEDDING_MODEL")
+				if embedding_model:
+					self.embeddings = EmbeddingsClass(google_api_key=GOOGLE_API_KEY, model=embedding_model)
+					logger.info(f"Initialized embeddings with model: {embedding_model}")
+				else:
+					# Use default model (gemini-embedding-001)
+					self.embeddings = EmbeddingsClass(google_api_key=GOOGLE_API_KEY)
+					logger.info("Initialized embeddings with default model (gemini-embedding-001)")
 				persist_directory = "./chroma_db"
 				self.vectorstore = Chroma(persist_directory=persist_directory, embedding_function=self.embeddings)
 				logger.info("Vector store initialized (Google embeddings)")
