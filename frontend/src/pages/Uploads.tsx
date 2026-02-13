@@ -10,7 +10,7 @@ interface UploadedDocument {
   filename: string;
   size: number;
   type: string;
-  status: 'uploading' | 'indexed' | 'error';
+  status: 'uploading' | 'indexed' | 'uploaded' | 'error';
   uploadedAt: Date;
   indexedAt?: Date;
   // Legal metadata
@@ -49,6 +49,7 @@ const Uploads: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [showMetadataForm, setShowMetadataForm] = useState(false);
   const [currentFile, setCurrentFile] = useState<File | null>(null);
+  const [loadingList, setLoadingList] = useState(true);
   const [metadata, setMetadata] = useState({
     caseName: '',
     court: '',
@@ -56,6 +57,29 @@ const Uploads: React.FC = () => {
     legalArea: '',
     citation: ''
   });
+
+  const fetchDocuments = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/documents`);
+      const list = (res.data?.documents || []).map((d: { filename: string; size: number; uploaded_at: string }) => ({
+        id: d.filename,
+        filename: d.filename,
+        size: d.size,
+        type: '',
+        status: 'uploaded' as const,
+        uploadedAt: new Date(d.uploaded_at)
+      }));
+      setDocuments(list);
+    } catch {
+      setDocuments([]);
+    } finally {
+      setLoadingList(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    fetchDocuments();
+  }, [fetchDocuments]);
 
   const uploadFile = async (file: File, meta: typeof metadata) => {
     const document: UploadedDocument = {
@@ -85,14 +109,18 @@ const Uploads: React.FC = () => {
           doc.id === document.id
             ? {
                 ...doc,
-                status: response.data.indexed ? 'indexed' : 'error',
+                status: response.data.indexed ? 'indexed' : 'uploaded',
                 indexedAt: response.data.indexed ? new Date() : undefined
               }
             : doc
         )
       );
 
-      toast.success(`${file.name} uploaded and indexed successfully`);
+      if (response.data.indexed) {
+        toast.success(`${file.name} uploaded and indexed for AI search`);
+      } else {
+        toast.success(`${file.name} uploaded. Set GOOGLE_API_KEY on server to enable AI indexing.`);
+      }
     } catch (error) {
       setDocuments(prev =>
         prev.map(doc =>
@@ -159,6 +187,8 @@ const Uploads: React.FC = () => {
     switch (status) {
       case 'indexed':
         return <CheckCircle className="w-5 h-5 text-legal-maroon" />;
+      case 'uploaded':
+        return <FileText className="w-5 h-5 text-legal-gold-dark" />;
       case 'error':
         return <AlertCircle className="w-5 h-5 text-red-500" />;
       default:
@@ -270,22 +300,40 @@ const Uploads: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-4">
+              <div className="flex flex-col gap-3 pt-4">
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMetadataForm(false);
+                      setCurrentFile(null);
+                    }}
+                    className="flex-1 px-4 py-2.5 border border-legal-maroon/20 text-legal-text-muted rounded-lg hover:bg-legal-maroon-light transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2.5 btn-legal rounded-lg"
+                  >
+                    Upload & Index
+                  </button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
+                    if (!currentFile) return;
                     setShowMetadataForm(false);
+                    setIsUploading(true);
+                    const emptyMeta = { caseName: '', court: '', year: new Date().getFullYear().toString(), legalArea: '', citation: '' };
+                    await uploadFile(currentFile, emptyMeta);
+                    setIsUploading(false);
                     setCurrentFile(null);
+                    setMetadata(emptyMeta);
                   }}
-                  className="flex-1 px-4 py-2.5 border border-legal-maroon/20 text-legal-text-muted rounded-lg hover:bg-legal-maroon-light transition-colors"
+                  className="text-sm text-legal-text-muted hover:text-legal-maroon transition-colors"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2.5 btn-legal rounded-lg"
-                >
-                  Upload & Index
+                  Skip metadata and upload
                 </button>
               </div>
             </form>
@@ -327,11 +375,16 @@ const Uploads: React.FC = () => {
             <h2 className="text-lg font-serif font-semibold text-legal-text">
               Indexed Documents
             </h2>
-            <p className="text-sm text-legal-text-muted">Hati Zilizopakiwa</p>
+            <p className="text-sm text-legal-text-muted">Indexed documents</p>
           </div>
         </div>
 
-        {documents.length === 0 ? (
+        {loadingList ? (
+          <div className="p-12 text-center">
+            <div className="w-10 h-10 border-2 border-legal-maroon border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-legal-text-muted">Loading documents...</p>
+          </div>
+        ) : documents.length === 0 ? (
           <div className="p-12 text-center">
             <FileText className="w-16 h-16 text-legal-maroon/30 mx-auto mb-4" />
             <p className="text-legal-text font-medium">No documents uploaded yet</p>
@@ -386,10 +439,12 @@ const Uploads: React.FC = () => {
                       {getStatusIcon(doc.status)}
                       <span className={`text-sm font-medium ${
                         doc.status === 'indexed' ? 'text-legal-maroon' :
+                        doc.status === 'uploaded' ? 'text-legal-gold-dark' :
                         doc.status === 'error' ? 'text-red-600' :
                         'text-legal-gold-dark'
                       }`}>
-                        {doc.status === 'indexed' ? 'Indexed' :
+                        {                        doc.status === 'indexed' ? 'Indexed' :
+                         doc.status === 'uploaded' ? 'Uploaded' :
                          doc.status === 'error' ? 'Error' : 'Processing...'}
                       </span>
                     </div>

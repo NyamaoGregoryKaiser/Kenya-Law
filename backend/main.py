@@ -46,7 +46,12 @@ app = create_app()
 # Add CORS middleware
 app.add_middleware(
 	CORSMiddleware,
-	allow_origins=["http://localhost:3000", "http://localhost:8080"],
+	allow_origins=[
+		"http://localhost:3000",
+		"http://localhost:8080",
+		"https://172.20.16.155",
+		"http://172.20.16.155",
+	],
 	allow_credentials=True,
 	allow_methods=["*"],
 	allow_headers=["*"],
@@ -58,7 +63,7 @@ class QueryRequest(BaseModel):
 	use_web_search: bool = False
 	context_documents: Optional[List[str]] = None
 	system_prompt: Optional[str] = None
-	user_rank: Optional[str] = None  # e.g., "Private", "Sergeant", "Captain", "Major", "Colonel", "General"
+	user_rank: Optional[str] = None  # e.g., "Advocate", "Judge", "Legal Researcher"
 
 class QueryResponse(BaseModel):
 	answer: str
@@ -73,6 +78,14 @@ class DocumentUploadResponse(BaseModel):
 	filename: str
 	status: str
 	indexed: bool
+
+class DocumentItem(BaseModel):
+	filename: str
+	size: int
+	uploaded_at: str
+
+class DocumentListResponse(BaseModel):
+	documents: List[DocumentItem]
 
 class MapEvent(BaseModel):
 	id: str
@@ -144,14 +157,14 @@ async def query_ai(
 	current_user: dict = Depends(get_current_user)
 ):
 	"""
-	Process AI queries with RAG capabilities and optional military rank/system prompt
+	Process AI queries with RAG capabilities and optional legal role / system prompt
 	"""
 	try:
 		role_preamble = ""
 		if request.user_rank:
 			role_preamble = (
-				f"You are responding to a Kenya Defence Forces officer of rank {request.user_rank}. "
-				"Adjust tone, brevity, and recommendations to that rank. "
+				f"You are responding to a legal professional (role: {request.user_rank}). "
+				"Tailor depth, tone, and recommendations appropriately for this audience. "
 			)
 		
 		custom_system = request.system_prompt
@@ -173,11 +186,7 @@ async def query_ai(
 			query=f"{role_preamble}{request.query}",
 			use_web_search=request.use_web_search
 		)
-		
-		# If an explicit system prompt is provided, prepend/append guidance to the answer (LLM-free shaping)
-		if custom_system:
-			guidance = f"System guidance applied: {custom_system}"
-			response["answer"] = f"{response['answer']}\n\n---\n{guidance}"
+		# Do not append raw system prompt to the answer; keep response clean for the UI
 
 		return QueryResponse(
 			answer=response["answer"],
@@ -191,6 +200,25 @@ async def query_ai(
 		logging.error(f"Query processing failed: {e}")
 		raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/documents", response_model=DocumentListResponse)
+async def list_documents(current_user: dict = Depends(get_current_user)):
+	"""List uploaded documents (for Uploads page)."""
+	upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
+	documents = []
+	if os.path.isdir(upload_dir):
+		for name in os.listdir(upload_dir):
+			path = os.path.join(upload_dir, name)
+			if os.path.isfile(path):
+				stat = os.stat(path)
+				documents.append(DocumentItem(
+					filename=name,
+					size=stat.st_size,
+					uploaded_at=datetime.fromtimestamp(stat.st_mtime).isoformat()
+				))
+	# newest first
+	documents.sort(key=lambda d: d.uploaded_at, reverse=True)
+	return DocumentListResponse(documents=documents)
+
 @app.post("/api/upload", response_model=DocumentUploadResponse)
 async def upload_document(
 	file: UploadFile = File(...),
@@ -200,11 +228,9 @@ async def upload_document(
 	Upload and index documents for RAG
 	"""
 	try:
-		# Create uploads directory
-		os.makedirs("uploads", exist_ok=True)
-		
-		# Save file
-		file_path = f"uploads/{file.filename}"
+		upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
+		os.makedirs(upload_dir, exist_ok=True)
+		file_path = os.path.join(upload_dir, file.filename)
 		with open(file_path, "wb") as buffer:
 			content = await file.read()
 			buffer.write(content)
