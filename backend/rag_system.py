@@ -299,46 +299,63 @@ class PatriotAIRAGSystem:
 				raise
 	
 	def generate_response(self, query: str, use_web_search: bool = False) -> Dict[str, Any]:
+		"""
+		Generate a response using ONLY the uploaded/indexed documents.
+		No external knowledge or web search is used. If no relevant documents
+		are found, return a clear message without calling the LLM.
+		"""
 		try:
 			relevant_docs = self.search_documents(query)
-			web_results = self.web_search(query) if use_web_search else []
+			# Documents-only: do not use web search for the answer
 			context = ""
 			sources = []
 			for doc in relevant_docs:
 				context += f"\n{doc.page_content}\n"
 				sources.append(f"Document: {doc.metadata.get('source', 'Unknown')}")
-			for r in web_results:
-				context += f"\n{r['title']}: {r['snippet']}\n"
-				sources.append(f"Web: {r['url']}")
+
+			# No relevant documents: do not call the LLM; answer only from uploaded data
+			if not relevant_docs or not context.strip():
+				return {
+					"answer": (
+						"This information was not found in your uploaded documents. "
+						"Answers are based only on the documents you have indexed. "
+						"Please upload relevant legal documents or rephrase your question to match the content of your uploads."
+					),
+					"sources": [],
+					"confidence": 0.0,
+					"timestamp": datetime.now().isoformat(),
+					"documents_found": 0,
+					"web_sources": 0
+				}
 
 			# Trim context to avoid excessive token usage
 			if len(context) > MAX_CONTEXT_CHARS:
-				context = context[-MAX_CONTEXT_CHARS:]
+				context = context[:MAX_CONTEXT_CHARS]
 
 			if self.llm:
 				prompt = (
-					"You are Kenya Law AI, an assistant for Kenyan legal research and jurisprudence.\n"
-					"Answer the question based on the provided context, relevant case law, statutes, and your knowledge.\n\n"
+					"You are Kenya Law AI. You must answer ONLY using the text in the Context below. "
+					"Do not use any other knowledge, general legal knowledge, or information from outside the Context. "
+					"If the Context does not contain enough information to answer the question, say: "
+					"'This information was not found in your uploaded documents.' "
+					"Quote or paraphrase only from the Context. Do not add facts, cases, or principles not present in the Context.\n\n"
 					f"Question: {query}\n\nContext:\n{context}\n\n"
-					"Provide an accurate, concise legal analysis with clear reasoning and, where appropriate, references to Kenyan legal principles."
+					"Answer based strictly on the Context above:"
 				)
 				answer = self._invoke_with_fallback(prompt)
 			else:
 				answer = (
-					f"Based on the query '{query}', here's a legal research summary:\n\n"
-					f"This is a mock response from Kenya Law AI. In a production system, "
-					f"this would provide detailed analysis based on:\n- Indexed legal documents and judgments ({len(relevant_docs)} documents found)\n"
-					f"- Any enabled web/legal research sources ({len(web_results)} sources)\n- Historical jurisprudence data\n\n"
-					"The system would explain the relevant legal principles, outline key authorities, and highlight how they may apply in the Kenyan context."
+					f"No LLM configured. Based on your query, {len(relevant_docs)} relevant passage(s) were found in your uploaded documents. "
+					"Configure GOOGLE_API_KEY to get answers generated from this content only."
 				)
 
 			return {
 				"answer": str(answer).strip(),
 				"sources": sources,
-				"confidence": 0.85 if self.llm else 0.6,
+				"confidence": 0.85 if self.llm and relevant_docs else 0.6,
 				"timestamp": datetime.now().isoformat(),
 				"documents_found": len(relevant_docs),
-				"web_sources": len(web_results)
+				"web_sources": 0
 			}
 		except Exception as e:
 			logger.error(f"Failed to generate response: {e}")

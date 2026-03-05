@@ -206,15 +206,7 @@ const AskAI: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center space-x-4">
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={useWebSearch} 
-                onChange={(e) => setUseWebSearch(e.target.checked)} 
-                className="w-4 h-4 text-legal-gold focus:ring-legal-gold border-legal-border rounded" 
-              />
-              <span className="text-sm text-legal-text-muted">Include Web Sources</span>
-            </label>
+            <span className="text-sm text-legal-text-muted">Answers from your uploaded documents only</span>
             <button 
               onClick={clearChat} 
               className="px-4 py-2 text-sm bg-legal-maroon-light text-legal-maroon rounded-lg hover:bg-legal-maroon/20 transition-colors font-medium"
