@@ -8,12 +8,18 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import type { Pluggable, PluggableList } from 'unified';
 
+interface SourceDetail {
+  document: string;
+  chunks: string[];
+}
+
 interface Message {
   id: string;
   content: string;
   isUser: boolean;
   timestamp: Date;
   sources?: string[];
+  sourcesDetail?: SourceDetail[];
   confidence?: number;
   systemGuidance?: string;
   roleApplied?: string | null;
@@ -99,7 +105,13 @@ const AskAI: React.FC = () => {
   const [presetId, setPresetId] = useState<string>('');
   const [usePreset, setUsePreset] = useState<boolean>(true);
   const [serverPrompts, setServerPrompts] = useState<{ id: string; title: string; description: string }[]>([]);
+  const [expandedSourceKey, setExpandedSourceKey] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const getDocumentDisplayName = (path: string) => {
+    const parts = path.replace(/\\/g, '/').split('/');
+    return parts[parts.length - 1] || path;
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -175,6 +187,7 @@ const AskAI: React.FC = () => {
         isUser: false,
         timestamp: new Date(),
         sources: response.data.sources,
+        sourcesDetail: response.data.sources_detail || undefined,
         confidence: response.data.confidence,
         systemGuidance,
         roleApplied: response.data.rank_applied || null
@@ -336,16 +349,53 @@ const AskAI: React.FC = () => {
                       {message.content}
                     </ReactMarkdown>
 
-                    {message.sources && message.sources.length > 0 && (
+                    {((message.sourcesDetail && message.sourcesDetail.length > 0) || (message.sources && message.sources.length > 0)) && (
                       <div className="ai-section">
                         <p className="ai-section-title">📚 Sources & Citations</p>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {message.sources.map((src, idx) => (
-                            <span key={`${src}-${idx}`} className="source-chip">
-                              {src}
-                            </span>
-                          ))}
-                        </div>
+                        {message.sourcesDetail && message.sourcesDetail.length > 0 ? (
+                          <div className="mt-2 space-y-2">
+                            {message.sourcesDetail.map((sd, docIdx) => {
+                              const key = `${message.id}-${docIdx}`;
+                              const isExpanded = expandedSourceKey === key;
+                              const displayName = getDocumentDisplayName(sd.document);
+                              const chunkCount = sd.chunks.length;
+                              return (
+                                <div key={key} className="border border-legal-border rounded-lg overflow-hidden bg-legal-bg/50">
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedSourceKey(isExpanded ? null : key)}
+                                    className="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-legal-maroon-light/20 transition-colors"
+                                  >
+                                    <span className="text-sm font-medium text-legal-text truncate pr-2" title={sd.document}>
+                                      {displayName}
+                                    </span>
+                                    <span className="text-xs text-legal-text-muted flex-shrink-0">
+                                      {chunkCount} passage{chunkCount !== 1 ? 's' : ''} {isExpanded ? '▼' : '▶'}
+                                    </span>
+                                  </button>
+                                  {isExpanded && (
+                                    <div className="px-4 pb-3 pt-1 border-t border-legal-border space-y-3">
+                                      {sd.chunks.map((chunk, chunkIdx) => (
+                                        <div key={chunkIdx} className="text-sm text-legal-text-muted bg-white rounded p-3 border border-legal-border/50">
+                                          <span className="text-xs font-medium text-legal-maroon block mb-1">Passage {chunkIdx + 1}</span>
+                                          <p className="whitespace-pre-wrap">{chunk}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {message.sources!.map((src, idx) => (
+                              <span key={`${src}-${idx}`} className="source-chip">
+                                {src}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
 

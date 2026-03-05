@@ -78,6 +78,10 @@ class QueryRequest(BaseModel):
 	system_prompt: Optional[str] = None
 	user_rank: Optional[str] = None  # e.g., "Advocate", "Judge", "Legal Researcher"
 
+class SourceDetail(BaseModel):
+	document: str
+	chunks: List[str]
+
 class QueryResponse(BaseModel):
 	answer: str
 	sources: List[str]
@@ -85,6 +89,7 @@ class QueryResponse(BaseModel):
 	timestamp: datetime
 	rank_applied: Optional[str] = None
 	prompt_used: Optional[str] = None
+	sources_detail: Optional[List[SourceDetail]] = None
 
 class DocumentUploadResponse(BaseModel):
 	document_id: str
@@ -203,13 +208,17 @@ async def query_ai(
 		)
 		# Do not append raw system prompt to the answer; keep response clean for the UI
 
+		sources_detail = response.get("sources_detail")
+		if sources_detail is not None:
+			sources_detail = [SourceDetail(document=sd["document"], chunks=sd["chunks"]) for sd in sources_detail]
 		return QueryResponse(
 			answer=response["answer"],
 			sources=response["sources"],
 			confidence=response["confidence"],
 			timestamp=datetime.fromisoformat(response["timestamp"]),
 			rank_applied=request.user_rank,
-			prompt_used=(custom_system[:4000] if custom_system else None)
+			prompt_used=(custom_system[:4000] if custom_system else None),
+			sources_detail=sources_detail
 		)
 	except Exception as e:
 		logging.error(f"Query processing failed: {e}")

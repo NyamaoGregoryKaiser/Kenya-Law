@@ -308,10 +308,14 @@ class PatriotAIRAGSystem:
 			relevant_docs = self.search_documents(query)
 			# Documents-only: do not use web search for the answer
 			context = ""
-			sources = []
+			# Group chunks by document path so we can return each document once with its chunks
+			by_document: Dict[str, List[str]] = {}
 			for doc in relevant_docs:
+				source_path = doc.metadata.get("source", "Unknown")
 				context += f"\n{doc.page_content}\n"
-				sources.append(f"Document: {doc.metadata.get('source', 'Unknown')}")
+				if source_path not in by_document:
+					by_document[source_path] = []
+				by_document[source_path].append(doc.page_content.strip())
 
 			# No relevant documents: do not call the LLM; answer only from uploaded data
 			if not relevant_docs or not context.strip():
@@ -322,6 +326,7 @@ class PatriotAIRAGSystem:
 						"Please upload relevant legal documents or rephrase your question to match the content of your uploads."
 					),
 					"sources": [],
+					"sources_detail": [],
 					"confidence": 0.0,
 					"timestamp": datetime.now().isoformat(),
 					"documents_found": 0,
@@ -349,9 +354,17 @@ class PatriotAIRAGSystem:
 					"Configure GOOGLE_API_KEY to get answers generated from this content only."
 				)
 
+			# Unique document paths for backward compatibility; sources_detail for UI (document -> chunks)
+			sources = [f"Document: {path}" for path in by_document.keys()]
+			sources_detail = [
+				{"document": path, "chunks": chunks}
+				for path, chunks in by_document.items()
+			]
+
 			return {
 				"answer": str(answer).strip(),
 				"sources": sources,
+				"sources_detail": sources_detail,
 				"confidence": 0.85 if self.llm and relevant_docs else 0.6,
 				"timestamp": datetime.now().isoformat(),
 				"documents_found": len(relevant_docs),
@@ -362,6 +375,7 @@ class PatriotAIRAGSystem:
 			return {
 				"answer": f"I encountered an error processing your query: {str(e)}",
 				"sources": [],
+				"sources_detail": [],
 				"confidence": 0.0,
 				"timestamp": datetime.now().isoformat(),
 				"documents_found": 0,
