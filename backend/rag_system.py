@@ -18,45 +18,17 @@ except ImportError:
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredWordDocumentLoader
 from langchain_community.vectorstores import Chroma
+from langchain_community.llms import Ollama
+from langchain_community.embeddings import OllamaEmbeddings
 
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 SERPAPI_KEY = os.getenv("SERPAPI_API_KEY")
-DEFAULT_GEMINI = "models/gemini-2.5-flash"
-DEFAULT_GEMINI_FALLBACK = "models/gemini-1.5-pro"
 
-def _ensure_models_prefix(value: str, default: str) -> str:
-	"""
-	Gemini via google-generativeai expects model ids prefixed with `models/`.
-	Normalize legacy values (e.g., `gemini-1.5-pro`) to the required format.
-	"""
-	if not value:
-		return default
-	return value if value.startswith("models/") else f"models/{value}"
+# Ollama model names (for local LLaMA on 127.0.0.1:11434)
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", OLLAMA_MODEL)
 
-GOOGLE_MODEL = _ensure_models_prefix(os.getenv("GOOGLE_MODEL", DEFAULT_GEMINI), DEFAULT_GEMINI)
-GOOGLE_MODEL_FALLBACK = _ensure_models_prefix(os.getenv("GOOGLE_MODEL_FALLBACK", DEFAULT_GEMINI_FALLBACK), DEFAULT_GEMINI_FALLBACK)
 MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "12000"))
 MAX_WEB_RESULTS = int(os.getenv("MAX_WEB_RESULTS", "3"))
-
-# Gemini LLM
-LLM_OK = False
-try:
-	from langchain_google_genai import ChatGoogleGenerativeAI
-	LLM_OK = bool(GOOGLE_API_KEY)
-except Exception:
-	LLM_OK = False
-
-# Google embeddings (if available), fallback none
-EMBED_OK = False
-EmbeddingsClass = None
-try:
-	from langchain_google_genai import GoogleGenerativeAIEmbeddings
-	if GOOGLE_API_KEY:
-		EmbeddingsClass = GoogleGenerativeAIEmbeddings
-		EMBED_OK = True
-except Exception:
-	EMBED_OK = False
-	EmbeddingsClass = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rag_system")
@@ -100,43 +72,27 @@ class PatriotAIRAGSystem:
 	
 	def _initialize_llm(self):
 		try:
-			if LLM_OK:
-				self.llm = ChatGoogleGenerativeAI(model=GOOGLE_MODEL, temperature=0.1, google_api_key=GOOGLE_API_KEY)
-				self.llm_fallback = ChatGoogleGenerativeAI(model=GOOGLE_MODEL_FALLBACK, temperature=0.1, google_api_key=GOOGLE_API_KEY)
-				logger.info(f"Using Gemini LLM ({GOOGLE_MODEL}) with fallback ({GOOGLE_MODEL_FALLBACK})")
-			else:
-				logger.warning("No GOOGLE_API_KEY found, using mock responses")
-				self.llm = None
-				self.llm_fallback = None
+			# Use local Ollama LLM (e.g., llama3.2) running on 127.0.0.1:11434
+			self.llm = Ollama(model=OLLAMA_MODEL)
+			self.llm_fallback = None
+			logger.info(f"Using Ollama LLM model: {OLLAMA_MODEL}")
 		except Exception as e:
-			logger.error(f"Failed to initialize Gemini LLM: {e}")
+			logger.error(f"Failed to initialize Ollama LLM: {e}")
 			self.llm = None
 			self.llm_fallback = None
 	
 	def _initialize_vectorstore(self):
 		try:
-			if not GOOGLE_API_KEY:
-				logger.warning("GOOGLE_API_KEY not set; embeddings disabled")
-				self.vectorstore = None
-				return
-			
-			if not EMBED_OK or EmbeddingsClass is None:
-				logger.warning("GoogleGenerativeAIEmbeddings not available; embeddings disabled")
-				self.vectorstore = None
-				return
-			
-			# langchain-google-genai 4.2.0 requires model parameter
-			# Use gemini-embedding-001 (default embedding model)
-			embedding_model = os.getenv("GOOGLE_EMBEDDING_MODEL", "models/gemini-embedding-001")
+			# Initialize embeddings using local Ollama embed model
 			try:
-				self.embeddings = EmbeddingsClass(google_api_key=GOOGLE_API_KEY, model=embedding_model)
-				logger.info(f"Initialized embeddings with model: {embedding_model}")
+				self.embeddings = OllamaEmbeddings(model=OLLAMA_EMBED_MODEL)
+				logger.info(f"Initialized Ollama embeddings with model: {OLLAMA_EMBED_MODEL}")
 				
 				persist_directory = "./chroma_db"
 				self.vectorstore = Chroma(persist_directory=persist_directory, embedding_function=self.embeddings)
-				logger.info("Vector store initialized (Google embeddings)")
+				logger.info("Vector store initialized (Ollama embeddings + Chroma)")
 			except Exception as embed_error:
-				logger.error(f"Failed to initialize embeddings: {embed_error}", exc_info=True)
+				logger.error(f"Failed to initialize Ollama embeddings / vector store: {embed_error}", exc_info=True)
 				self.vectorstore = None
 		except Exception as e:
 			logger.error(f"Vector store initialization failed: {e}", exc_info=True)
@@ -169,7 +125,7 @@ class PatriotAIRAGSystem:
 		try:
 			if self.vectorstore is None:
 				logger.warning("Vector store not initialized; skipping index")
-				return False, "Vector store not initialized. Check GOOGLE_API_KEY and server logs."
+				return False, "Vector store not initialized. Check Ollama service and server logs."
 			documents = self._load_document(file_path)
 			if not documents:
 				return False, "Could not load document (install 'unstructured' for DOC/DOCX, or check file format)."
