@@ -17,7 +17,8 @@ except ImportError:
 	from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredWordDocumentLoader
-from langchain_community.vectorstores import Chroma
+from qdrant_client import QdrantClient
+from langchain_community.vectorstores import Qdrant
 from langchain_community.chat_models import ChatOllama
 from langchain_community.embeddings import OllamaEmbeddings
 
@@ -91,10 +92,20 @@ class PatriotAIRAGSystem:
 				base_url=OLLAMA_BASE_URL,
 			)
 			logger.info(f"Initialized Ollama embeddings with model: {OLLAMA_EMBED_MODEL} at {OLLAMA_BASE_URL}")
-			
-			persist_directory = "./chroma_db"
-			self.vectorstore = Chroma(persist_directory=persist_directory, embedding_function=self.embeddings)
-			logger.info("Vector store initialized (Chroma + Ollama embeddings)")
+
+			# Qdrant configuration
+			qdrant_host = os.getenv("QDRANT_HOST", "127.0.0.1")
+			qdrant_port = int(os.getenv("QDRANT_PORT", "6333"))
+			collection_name = os.getenv("QDRANT_COLLECTION", "kenyalaw_cases")
+
+			client = QdrantClient(host=qdrant_host, port=qdrant_port)
+
+			self.vectorstore = Qdrant(
+				client=client,
+				collection_name=collection_name,
+				embeddings=self.embeddings,
+			)
+			logger.info(f"Vector store initialized (Qdrant collection={collection_name})")
 		except Exception as e:
 			logger.error(f"Vector store initialization failed: {e}", exc_info=True)
 			self.vectorstore = None
