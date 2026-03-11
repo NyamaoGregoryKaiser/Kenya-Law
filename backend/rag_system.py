@@ -218,7 +218,7 @@ class PatriotAIRAGSystem:
 			logger.error(f"Failed to search documents: {e}")
 			return []
 	
-	def web_search(self, query: str, num_results: int = MAX_WEB_RESULTS):
+	def web_search(self, query: str, num_results: int = 0):
 		# Web search disabled; answers are based only on uploaded documents.
 		return []
 
