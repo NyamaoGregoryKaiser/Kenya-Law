@@ -8,7 +8,6 @@ import logging
 import time
 from typing import List, Dict, Any
 from datetime import datetime
-import hashlib
 
 try:
 	# Try newer langchain import (langchain>=0.1.0)
@@ -19,22 +18,45 @@ except ImportError:
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredWordDocumentLoader
 from langchain_community.vectorstores import Chroma
-from langchain_community.llms import Ollama
-from langchain_community.embeddings import OllamaEmbeddings
-from document_registry import registry
 
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 SERPAPI_KEY = os.getenv("SERPAPI_API_KEY")
+DEFAULT_GEMINI = "models/gemini-2.5-flash"
+DEFAULT_GEMINI_FALLBACK = "models/gemini-1.5-pro"
 
-# Ollama model names (for local LLaMA on 127.0.0.1:11434)
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
-OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", OLLAMA_MODEL)
+def _ensure_models_prefix(value: str, default: str) -> str:
+	"""
+	Gemini via google-generativeai expects model ids prefixed with `models/`.
+	Normalize legacy values (e.g., `gemini-1.5-pro`) to the required format.
+	"""
+	if not value:
+		return default
+	return value if value.startswith("models/") else f"models/{value}"
 
+GOOGLE_MODEL = _ensure_models_prefix(os.getenv("GOOGLE_MODEL", DEFAULT_GEMINI), DEFAULT_GEMINI)
+GOOGLE_MODEL_FALLBACK = _ensure_models_prefix(os.getenv("GOOGLE_MODEL_FALLBACK", DEFAULT_GEMINI_FALLBACK), DEFAULT_GEMINI_FALLBACK)
 MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "12000"))
 MAX_WEB_RESULTS = int(os.getenv("MAX_WEB_RESULTS", "3"))
 
-# Indexing versions (bump to force re-index)
-EXTRACT_VERSION = os.getenv("EXTRACT_VERSION", "unstructured_v1")
-CHUNKER_VERSION = os.getenv("CHUNKER_VERSION", "rcs_1000_200_v1")
+# Gemini LLM
+LLM_OK = False
+try:
+	from langchain_google_genai import ChatGoogleGenerativeAI
+	LLM_OK = bool(GOOGLE_API_KEY)
+except Exception:
+	LLM_OK = False
+
+# Google embeddings (if available), fallback none
+EMBED_OK = False
+EmbeddingsClass = None
+try:
+	from langchain_google_genai import GoogleGenerativeAIEmbeddings
+	if GOOGLE_API_KEY:
+		EmbeddingsClass = GoogleGenerativeAIEmbeddings
+		EMBED_OK = True
+except Exception:
+	EMBED_OK = False
+	EmbeddingsClass = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rag_system")
@@ -78,27 +100,43 @@ class PatriotAIRAGSystem:
 	
 	def _initialize_llm(self):
 		try:
-			# Use local Ollama LLM (e.g., llama3.2) running on 127.0.0.1:11434
-			self.llm = Ollama(model=OLLAMA_MODEL)
-			self.llm_fallback = None
-			logger.info(f"Using Ollama LLM model: {OLLAMA_MODEL}")
+			if LLM_OK:
+				self.llm = ChatGoogleGenerativeAI(model=GOOGLE_MODEL, temperature=0.1, google_api_key=GOOGLE_API_KEY)
+				self.llm_fallback = ChatGoogleGenerativeAI(model=GOOGLE_MODEL_FALLBACK, temperature=0.1, google_api_key=GOOGLE_API_KEY)
+				logger.info(f"Using Gemini LLM ({GOOGLE_MODEL}) with fallback ({GOOGLE_MODEL_FALLBACK})")
+			else:
+				logger.warning("No GOOGLE_API_KEY found, using mock responses")
+				self.llm = None
+				self.llm_fallback = None
 		except Exception as e:
-			logger.error(f"Failed to initialize Ollama LLM: {e}")
+			logger.error(f"Failed to initialize Gemini LLM: {e}")
 			self.llm = None
 			self.llm_fallback = None
 	
 	def _initialize_vectorstore(self):
 		try:
-			# Initialize embeddings using local Ollama embed model
+			if not GOOGLE_API_KEY:
+				logger.warning("GOOGLE_API_KEY not set; embeddings disabled")
+				self.vectorstore = None
+				return
+			
+			if not EMBED_OK or EmbeddingsClass is None:
+				logger.warning("GoogleGenerativeAIEmbeddings not available; embeddings disabled")
+				self.vectorstore = None
+				return
+			
+			# langchain-google-genai 4.2.0 requires model parameter
+			# Use gemini-embedding-001 (default embedding model)
+			embedding_model = os.getenv("GOOGLE_EMBEDDING_MODEL", "models/gemini-embedding-001")
 			try:
-				self.embeddings = OllamaEmbeddings(model=OLLAMA_EMBED_MODEL)
-				logger.info(f"Initialized Ollama embeddings with model: {OLLAMA_EMBED_MODEL}")
+				self.embeddings = EmbeddingsClass(google_api_key=GOOGLE_API_KEY, model=embedding_model)
+				logger.info(f"Initialized embeddings with model: {embedding_model}")
 				
 				persist_directory = "./chroma_db"
 				self.vectorstore = Chroma(persist_directory=persist_directory, embedding_function=self.embeddings)
-				logger.info("Vector store initialized (Ollama embeddings + Chroma)")
+				logger.info("Vector store initialized (Google embeddings)")
 			except Exception as embed_error:
-				logger.error(f"Failed to initialize Ollama embeddings / vector store: {embed_error}", exc_info=True)
+				logger.error(f"Failed to initialize embeddings: {embed_error}", exc_info=True)
 				self.vectorstore = None
 		except Exception as e:
 			logger.error(f"Vector store initialization failed: {e}", exc_info=True)
@@ -125,99 +163,26 @@ class PatriotAIRAGSystem:
 	
 	def _split_documents(self, documents):
 		return RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(documents)
-
-	def _content_hash(self, documents) -> str:
-		# Hash extracted text content to detect changes
-		text = "\n".join([getattr(d, "page_content", "") or "" for d in documents]).strip()
-		return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
-
-	def _chunk_id(self, doc_uid: str, chunk_index: int, chunk_text: str) -> str:
-		chunk_text_hash = hashlib.sha256((chunk_text or "").encode("utf-8", errors="ignore")).hexdigest()
-		raw = f"{doc_uid}|{chunk_index}|{chunk_text_hash}|{CHUNKER_VERSION}|{OLLAMA_EMBED_MODEL}"
-		return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 	
 	def index_document(self, file_path: str, metadata: Dict[str, Any] = None):
 		"""Returns (success: bool, message: str)."""
 		try:
 			if self.vectorstore is None:
 				logger.warning("Vector store not initialized; skipping index")
-				return False, "Vector store not initialized. Check Ollama service and server logs."
+				return False, "Vector store not initialized. Check GOOGLE_API_KEY and server logs."
 			documents = self._load_document(file_path)
 			if not documents:
 				return False, "Could not load document (install 'unstructured' for DOC/DOCX, or check file format)."
-
-			# Registry: determine whether to skip, re-index, or index new
-			content_hash = self._content_hash(documents)
-			doc_uid, rec = registry.upsert_discovered(
-				file_path,
-				content_hash=content_hash,
-				extract_version=EXTRACT_VERSION,
-				chunker_version=CHUNKER_VERSION,
-				embedding_model=OLLAMA_EMBED_MODEL,
-			)
-
-			# Skip if unchanged + already indexed
-			if (
-				getattr(rec, "index_status", None) == "indexed"
-				and getattr(rec, "content_hash", None) == content_hash
-				and getattr(rec, "chunker_version", None) == CHUNKER_VERSION
-				and getattr(rec, "embedding_model", None) == OLLAMA_EMBED_MODEL
-				and getattr(rec, "deleted_at", None) is None
-			):
-				return True, "Already indexed (no changes detected)."
-
-			# If doc previously indexed/failed, delete vectors for this doc_uid before re-upsert
-			try:
-				if hasattr(self.vectorstore, "_collection"):
-					self.vectorstore._collection.delete(where={"doc_uid": doc_uid})
-			except Exception as del_err:
-				logger.warning(f"Could not delete existing vectors for doc_uid={doc_uid}: {del_err}")
-
 			split_docs = self._split_documents(documents)
-			# Add required metadata for hygiene + delete-by-doc_uid
-			texts = []
-			metas = []
-			ids = []
-			for i, d in enumerate(split_docs):
-				md = dict(getattr(d, "metadata", {}) or {})
-				if metadata:
-					md.update(metadata)
-				md.update(
-					{
-						"doc_uid": doc_uid,
-						"source_path": file_path,
-						"filename": os.path.basename(file_path),
-						"chunk_index": i,
-						"content_hash": content_hash,
-						"extract_version": EXTRACT_VERSION,
-						"chunker_version": CHUNKER_VERSION,
-						"embedding_model": OLLAMA_EMBED_MODEL,
-					}
-				)
-				text = getattr(d, "page_content", "") or ""
-				texts.append(text)
-				metas.append(md)
-				ids.append(self._chunk_id(doc_uid, i, text))
-
-			# Idempotent upsert by stable ids
-			self.vectorstore.add_texts(texts=texts, metadatas=metas, ids=ids)
-			try:
-				self.vectorstore.persist()
-			except Exception:
-				# Newer Chroma auto-persists; ignore
-				pass
-
-			registry.mark_indexed(doc_uid)
+			if metadata:
+				for d in split_docs:
+					d.metadata.update(metadata)
+			self.vectorstore.add_documents(split_docs)
+			self.vectorstore.persist()
 			logger.info(f"Successfully indexed {file_path}")
 			return True, "Indexed for AI search."
 		except Exception as e:
 			logger.error(f"Failed to index document {file_path}: {e}")
-			try:
-				doc_uid = registry.get_by_source_path(file_path).doc_uid if registry.get_by_source_path(file_path) else None
-				if doc_uid:
-					registry.mark_failed(doc_uid, str(e))
-			except Exception:
-				pass
 			return False, str(e)
 	
 	def is_document_indexed(self, filename: str) -> bool:
@@ -226,18 +191,41 @@ class PatriotAIRAGSystem:
 			if self.vectorstore is None:
 				logger.debug(f"Vector store not initialized, {filename} not indexed")
 				return False
-			# Robust check via LangChain filter on filename metadata
-			try:
-				results = self.vectorstore.similarity_search(
-					" ",  # dummy query; we rely on metadata filter
-					k=1,
-					filter={"filename": filename},
-				)
-				is_indexed = len(results) > 0
-				logger.debug(f"is_document_indexed({filename}) -> {is_indexed}")
-				return is_indexed
-			except Exception as search_error:
-				logger.warning(f"is_document_indexed search failed for {filename}: {search_error}")
+			# Search for documents with this filename in metadata
+			# Use a simple search to check if any chunks exist for this filename
+			if hasattr(self.vectorstore, '_collection'):
+				try:
+					# Query Chroma collection directly using where clause
+					results = self.vectorstore._collection.get(where={"filename": filename}, limit=1)
+					if results and isinstance(results, dict):
+						ids = results.get("ids", [])
+						is_indexed = len(ids) > 0
+						if is_indexed:
+							logger.debug(f"Document {filename} is indexed ({len(ids)} chunks found)")
+						return is_indexed
+					return False
+				except Exception as coll_error:
+					logger.warning(f"Chroma collection query failed for {filename}: {coll_error}")
+					# Fallback to search method
+					try:
+						results = self.vectorstore.similarity_search("", k=1000)
+						for doc in results:
+							if doc.metadata.get("filename") == filename:
+								logger.debug(f"Document {filename} found via search fallback")
+								return True
+					except Exception as search_error:
+						logger.warning(f"Search fallback also failed for {filename}: {search_error}")
+					return False
+			else:
+				# Fallback: try searching with empty query and check metadata
+				try:
+					results = self.vectorstore.similarity_search("", k=1000)
+					for doc in results:
+						if doc.metadata.get("filename") == filename:
+							logger.debug(f"Document {filename} found via search")
+							return True
+				except Exception as search_error:
+					logger.warning(f"Search failed for {filename}: {search_error}")
 				return False
 		except Exception as e:
 			logger.warning(f"Failed to check if document {filename} is indexed: {e}")
@@ -249,20 +237,10 @@ class PatriotAIRAGSystem:
 			if self.vectorstore is None:
 				logger.warning("Vector store not initialized; cannot delete from vector store")
 				return False
-			# Prefer delete-by-doc_uid (clean), fall back to filename
-			doc_uid = None
-			try:
-				rec = registry.get_by_source_path(filename)
-				doc_uid = rec.doc_uid if rec else None
-			except Exception:
-				doc_uid = None
-
+			# Try to delete documents matching the filename in metadata
+			# Access Chroma collection directly for metadata-based deletion
 			if hasattr(self.vectorstore, '_collection'):
-				if doc_uid:
-					self.vectorstore._collection.delete(where={"doc_uid": doc_uid})
-					registry.mark_deleted(doc_uid)
-				else:
-					self.vectorstore._collection.delete(where={"filename": filename})
+				self.vectorstore._collection.delete(where={"filename": filename})
 				logger.info(f"Deleted document {filename} from vector store")
 				return True
 			else:
@@ -339,33 +317,7 @@ class PatriotAIRAGSystem:
 					by_document[source_path] = []
 				by_document[source_path].append(doc.page_content.strip())
 
-			# If vector search found nothing, fall back to a simple text scan over uploaded documents
-			if not relevant_docs or not context.strip():
-				fallback_docs = []
-				upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
-				query_lower = query.lower()
-				if os.path.isdir(upload_dir):
-					for name in os.listdir(upload_dir):
-						path = os.path.join(upload_dir, name)
-						if not os.path.isfile(path):
-							continue
-						docs = self._load_document(path)
-						for d in docs:
-							text = (getattr(d, "page_content", "") or "").lower()
-							if query_lower in text:
-								fallback_docs.append(d)
-					if fallback_docs:
-						relevant_docs = fallback_docs
-						context = ""
-						by_document = {}
-						for d in relevant_docs:
-							source_path = d.metadata.get("source", "Unknown")
-							context += f"\n{d.page_content}\n"
-							if source_path not in by_document:
-								by_document[source_path] = []
-							by_document[source_path].append(d.page_content.strip())
-
-			# Still nothing after fallback: return clear "not found" message
+			# No relevant documents: do not call the LLM; answer only from uploaded data
 			if not relevant_docs or not context.strip():
 				return {
 					"answer": (
@@ -387,13 +339,13 @@ class PatriotAIRAGSystem:
 
 			if self.llm:
 				prompt = (
-					"You are Kenya Law AI. Base your answer only on the information contained in the Context below. "
-					"Do not introduce specific facts, parties, or case details that are clearly not supported by the Context. "
-					"If the Context does not mention a person or case name that the user asks about, say that the name is not mentioned "
-					"in the uploaded documents, but you may still summarize any relevant legal principles, holdings, or related cases "
-					"that DO appear in the Context. When you refer to facts or holdings, make sure they come directly from the Context.\n\n"
+					"You are Kenya Law AI. You must answer ONLY using the text in the Context below. "
+					"Do not use any other knowledge, general legal knowledge, or information from outside the Context. "
+					"If the Context does not contain enough information to answer the question, say: "
+					"'This information was not found in your uploaded documents.' "
+					"Quote or paraphrase only from the Context. Do not add facts, cases, or principles not present in the Context.\n\n"
 					f"Question: {query}\n\nContext:\n{context}\n\n"
-					"Provide a clear, concise legal summary based strictly on the Context above."
+					"Answer based strictly on the Context above:"
 				)
 				answer = self._invoke_with_fallback(prompt)
 			else:
