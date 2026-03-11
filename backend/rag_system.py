@@ -186,6 +186,7 @@ class PatriotAIRAGSystem:
 					{
 						"doc_uid": doc_uid,
 						"source_path": file_path,
+						"filename": os.path.basename(file_path),
 						"chunk_index": i,
 						"content_hash": content_hash,
 						"extract_version": EXTRACT_VERSION,
