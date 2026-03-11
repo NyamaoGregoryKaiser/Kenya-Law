@@ -55,6 +55,8 @@ async def log_requests(request, call_next):
 import os
 logging.info(f"GOOGLE_API_KEY present: {bool(os.getenv('GOOGLE_API_KEY'))}")
 logging.info(f"SERPAPI_API_KEY present: {bool(os.getenv('SERPAPI_API_KEY'))}")
+logging.info(f"DATABASE_URL present: {bool(os.getenv('DATABASE_URL'))}")
+logging.info(f"OLLAMA_MODEL: {os.getenv('OLLAMA_MODEL', '')}")
 
 # Add CORS middleware
 app.add_middleware(

@@ -8,6 +8,7 @@ import logging
 import time
 from typing import List, Dict, Any
 from datetime import datetime
+import hashlib
 
 try:
 	# Try newer langchain import (langchain>=0.1.0)
@@ -20,6 +21,7 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader, Unstru
 from langchain_community.vectorstores import Chroma
 from langchain_community.llms import Ollama
 from langchain_community.embeddings import OllamaEmbeddings
+from document_registry import registry
 
 SERPAPI_KEY = os.getenv("SERPAPI_API_KEY")
 
@@ -29,6 +31,10 @@ OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", OLLAMA_MODEL)
 
 MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "12000"))
 MAX_WEB_RESULTS = int(os.getenv("MAX_WEB_RESULTS", "3"))
+
+# Indexing versions (bump to force re-index)
+EXTRACT_VERSION = os.getenv("EXTRACT_VERSION", "unstructured_v1")
+CHUNKER_VERSION = os.getenv("CHUNKER_VERSION", "rcs_1000_200_v1")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rag_system")
@@ -119,6 +125,16 @@ class PatriotAIRAGSystem:
 	
 	def _split_documents(self, documents):
 		return RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(documents)
+
+	def _content_hash(self, documents) -> str:
+		# Hash extracted text content to detect changes
+		text = "\n".join([getattr(d, "page_content", "") or "" for d in documents]).strip()
+		return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
+
+	def _chunk_id(self, doc_uid: str, chunk_index: int, chunk_text: str) -> str:
+		chunk_text_hash = hashlib.sha256((chunk_text or "").encode("utf-8", errors="ignore")).hexdigest()
+		raw = f"{doc_uid}|{chunk_index}|{chunk_text_hash}|{CHUNKER_VERSION}|{OLLAMA_EMBED_MODEL}"
+		return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 	
 	def index_document(self, file_path: str, metadata: Dict[str, Any] = None):
 		"""Returns (success: bool, message: str)."""
@@ -129,16 +145,78 @@ class PatriotAIRAGSystem:
 			documents = self._load_document(file_path)
 			if not documents:
 				return False, "Could not load document (install 'unstructured' for DOC/DOCX, or check file format)."
+
+			# Registry: determine whether to skip, re-index, or index new
+			content_hash = self._content_hash(documents)
+			doc_uid, rec = registry.upsert_discovered(
+				file_path,
+				content_hash=content_hash,
+				extract_version=EXTRACT_VERSION,
+				chunker_version=CHUNKER_VERSION,
+				embedding_model=OLLAMA_EMBED_MODEL,
+			)
+
+			# Skip if unchanged + already indexed
+			if (
+				getattr(rec, "index_status", None) == "indexed"
+				and getattr(rec, "content_hash", None) == content_hash
+				and getattr(rec, "chunker_version", None) == CHUNKER_VERSION
+				and getattr(rec, "embedding_model", None) == OLLAMA_EMBED_MODEL
+				and getattr(rec, "deleted_at", None) is None
+			):
+				return True, "Already indexed (no changes detected)."
+
+			# If doc previously indexed/failed, delete vectors for this doc_uid before re-upsert
+			try:
+				if hasattr(self.vectorstore, "_collection"):
+					self.vectorstore._collection.delete(where={"doc_uid": doc_uid})
+			except Exception as del_err:
+				logger.warning(f"Could not delete existing vectors for doc_uid={doc_uid}: {del_err}")
+
 			split_docs = self._split_documents(documents)
-			if metadata:
-				for d in split_docs:
-					d.metadata.update(metadata)
-			self.vectorstore.add_documents(split_docs)
-			self.vectorstore.persist()
+			# Add required metadata for hygiene + delete-by-doc_uid
+			texts = []
+			metas = []
+			ids = []
+			for i, d in enumerate(split_docs):
+				md = dict(getattr(d, "metadata", {}) or {})
+				if metadata:
+					md.update(metadata)
+				md.update(
+					{
+						"doc_uid": doc_uid,
+						"source_path": file_path,
+						"chunk_index": i,
+						"content_hash": content_hash,
+						"extract_version": EXTRACT_VERSION,
+						"chunker_version": CHUNKER_VERSION,
+						"embedding_model": OLLAMA_EMBED_MODEL,
+					}
+				)
+				text = getattr(d, "page_content", "") or ""
+				texts.append(text)
+				metas.append(md)
+				ids.append(self._chunk_id(doc_uid, i, text))
+
+			# Idempotent upsert by stable ids
+			self.vectorstore.add_texts(texts=texts, metadatas=metas, ids=ids)
+			try:
+				self.vectorstore.persist()
+			except Exception:
+				# Newer Chroma auto-persists; ignore
+				pass
+
+			registry.mark_indexed(doc_uid)
 			logger.info(f"Successfully indexed {file_path}")
 			return True, "Indexed for AI search."
 		except Exception as e:
 			logger.error(f"Failed to index document {file_path}: {e}")
+			try:
+				doc_uid = registry.get_by_source_path(file_path).doc_uid if registry.get_by_source_path(file_path) else None
+				if doc_uid:
+					registry.mark_failed(doc_uid, str(e))
+			except Exception:
+				pass
 			return False, str(e)
 	
 	def is_document_indexed(self, filename: str) -> bool:
@@ -193,10 +271,20 @@ class PatriotAIRAGSystem:
 			if self.vectorstore is None:
 				logger.warning("Vector store not initialized; cannot delete from vector store")
 				return False
-			# Try to delete documents matching the filename in metadata
-			# Access Chroma collection directly for metadata-based deletion
+			# Prefer delete-by-doc_uid (clean), fall back to filename
+			doc_uid = None
+			try:
+				rec = registry.get_by_source_path(filename)
+				doc_uid = rec.doc_uid if rec else None
+			except Exception:
+				doc_uid = None
+
 			if hasattr(self.vectorstore, '_collection'):
-				self.vectorstore._collection.delete(where={"filename": filename})
+				if doc_uid:
+					self.vectorstore._collection.delete(where={"doc_uid": doc_uid})
+					registry.mark_deleted(doc_uid)
+				else:
+					self.vectorstore._collection.delete(where={"filename": filename})
 				logger.info(f"Deleted document {filename} from vector store")
 				return True
 			else:
