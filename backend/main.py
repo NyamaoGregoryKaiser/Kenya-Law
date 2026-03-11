@@ -71,13 +71,18 @@ app.add_middleware(
 )
 
 # Pydantic models
+class HistoryTurn(BaseModel):
+	role: str  # 'user' or 'assistant'
+	content: str
+
 class QueryRequest(BaseModel):
 	query: str
 	use_web_search: bool = False
 	context_documents: Optional[List[str]] = None
 	system_prompt: Optional[str] = None
 	user_rank: Optional[str] = None  # e.g., "Advocate", "Judge", "Legal Researcher"
-
+	history: Optional[List[HistoryTurn]] = None
+	
 class SourceDetail(BaseModel):
 	document: str
 	chunks: List[str]
@@ -171,13 +176,37 @@ async def delete_prompt(pid: str, current_user: dict = Depends(get_current_user)
 
 # adjust /api/query to resolve prompt id if provided via system_prompt field containing the id
 # (keep previous behavior for raw text)
+def _rewrite_query_if_followup(request: QueryRequest) -> str:
+	"""
+	Simple conversational memory:
+	- If the current query is short/vague and there is prior history,
+	  append the last user topic so retrieval has context.
+	"""
+	q = (request.query or "").strip()
+	if not request.history:
+		return q
+	
+	lower_q = q.lower()
+	# Short, vague follow-ups like "give me details", "explain further", "what about the judge?"
+	if len(q.split()) <= 6 and any(phrase in lower_q for phrase in ["details", "explain", "more", "what about", "reasoning", "judge", "what happened next"]):
+		# Find the last substantive user question
+		for turn in reversed(request.history):
+			if turn.role != "user":
+				continue
+			previous = (turn.content or "").strip()
+			if len(previous.split()) >= 4:
+				return f"{q} about {previous}"
+	return q
+
+
 @app.post("/api/query", response_model=QueryResponse)
 async def query_ai(
 	request: QueryRequest,
 	current_user: dict = Depends(get_current_user)
 ):
 	"""
-	Process AI queries with RAG capabilities and optional legal role / system prompt
+	Process AI queries with RAG capabilities, with light conversational query rewriting
+	for short follow-up questions.
 	"""
 	try:
 		role_preamble = ""
@@ -201,9 +230,12 @@ async def query_ai(
 			"highlight important precedents, and clearly state assumptions. Use clear, professional English."
 			)
 
+		# Rewrite short follow-up questions using conversation history
+		rewritten_query = _rewrite_query_if_followup(request)
+
 		# Use the RAG system to generate response
 		response = rag_system.generate_response(
-			query=f"{role_preamble}{request.query}",
+			query=f"{role_preamble}{rewritten_query}",
 			use_web_search=request.use_web_search
 		)
 		# Do not append raw system prompt to the answer; keep response clean for the UI

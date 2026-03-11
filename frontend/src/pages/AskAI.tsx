@@ -161,11 +161,18 @@ const AskAI: React.FC = () => {
     setIsLoading(true);
 
     try {
+      // Build lightweight conversation history for the backend (last few turns)
+      const history = messages.slice(-6).map((m) => ({
+        role: m.isUser ? 'user' : 'assistant',
+        content: m.content,
+      }));
+
       const response = await axios.post(`${API_BASE}/query`, {
         query: input,
         use_web_search: useWebSearch,
         system_prompt,
-        user_rank: role || undefined
+        user_rank: role || undefined,
+        history,
       });
 
       const rawAnswer: string = response.data.answer || '';

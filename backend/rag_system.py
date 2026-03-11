@@ -24,10 +24,10 @@ from langchain_community.embeddings import OllamaEmbeddings
 
 # Local Ollama configuration (LLM + embeddings)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b")
+OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:3b")
 OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
-MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "12000"))
+MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "6000"))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rag_system")
@@ -219,7 +219,7 @@ class PatriotAIRAGSystem:
 			# Return False but don't raise - file deletion should still proceed
 			return False
 	
-	def search_documents(self, query: str, k: int = 5):
+	def search_documents(self, query: str, k: int = 3):
 		try:
 			if not self.vectorstore:
 				logger.warning("Vector store not initialized")
