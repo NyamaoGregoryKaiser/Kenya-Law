@@ -93,6 +93,10 @@ class QueryResponse(BaseModel):
 	prompt_used: Optional[str] = None
 	sources_detail: Optional[List[SourceDetail]] = None
 
+class DebugSearchRequest(BaseModel):
+	query: str
+	k: int = 5
+
 class DocumentUploadResponse(BaseModel):
 	document_id: str
 	filename: str
@@ -225,6 +229,23 @@ async def query_ai(
 	except Exception as e:
 		logging.error(f"Query processing failed: {e}")
 		raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/debug/search")
+async def debug_search(body: DebugSearchRequest, current_user: dict = Depends(get_current_user)):
+	"""
+	Debug endpoint: inspect which chunks RAG retrieves for a given query.
+	"""
+	docs = rag_system.search_documents(body.query, k=body.k)
+	return {
+		"hits": len(docs),
+		"results": [
+			{
+				"metadata": getattr(d, "metadata", {}),
+				"preview": (getattr(d, "page_content", "") or "")[:500],
+			}
+			for d in docs
+		],
+	}
 
 @app.get("/api/documents", response_model=DocumentListResponse)
 async def list_documents(current_user: dict = Depends(get_current_user)):

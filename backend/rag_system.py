@@ -339,7 +339,33 @@ class PatriotAIRAGSystem:
 					by_document[source_path] = []
 				by_document[source_path].append(doc.page_content.strip())
 
-			# No relevant documents: do not call the LLM; answer only from uploaded data
+			# If vector search found nothing, fall back to a simple text scan over uploaded documents
+			if not relevant_docs or not context.strip():
+				fallback_docs = []
+				upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
+				query_lower = query.lower()
+				if os.path.isdir(upload_dir):
+					for name in os.listdir(upload_dir):
+						path = os.path.join(upload_dir, name)
+						if not os.path.isfile(path):
+							continue
+						docs = self._load_document(path)
+						for d in docs:
+							text = (getattr(d, "page_content", "") or "").lower()
+							if query_lower in text:
+								fallback_docs.append(d)
+					if fallback_docs:
+						relevant_docs = fallback_docs
+						context = ""
+						by_document = {}
+						for d in relevant_docs:
+							source_path = d.metadata.get("source", "Unknown")
+							context += f"\n{d.page_content}\n"
+							if source_path not in by_document:
+								by_document[source_path] = []
+							by_document[source_path].append(d.page_content.strip())
+
+			# Still nothing after fallback: return clear "not found" message
 			if not relevant_docs or not context.strip():
 				return {
 					"answer": (
