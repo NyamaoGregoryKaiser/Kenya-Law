@@ -361,13 +361,13 @@ class PatriotAIRAGSystem:
 
 			if self.llm:
 				prompt = (
-					"You are Kenya Law AI. You must answer ONLY using the text in the Context below. "
-					"Do not use any other knowledge, general legal knowledge, or information from outside the Context. "
-					"If the Context does not contain enough information to answer the question, say: "
-					"'This information was not found in your uploaded documents.' "
-					"Quote or paraphrase only from the Context. Do not add facts, cases, or principles not present in the Context.\n\n"
+					"You are Kenya Law AI. Base your answer only on the information contained in the Context below. "
+					"Do not introduce specific facts, parties, or case details that are clearly not supported by the Context. "
+					"If the Context does not mention a person or case name that the user asks about, say that the name is not mentioned "
+					"in the uploaded documents, but you may still summarize any relevant legal principles, holdings, or related cases "
+					"that DO appear in the Context. When you refer to facts or holdings, make sure they come directly from the Context.\n\n"
 					f"Question: {query}\n\nContext:\n{context}\n\n"
-					"Answer based strictly on the Context above:"
+					"Provide a clear, concise legal summary based strictly on the Context above."
 				)
 				answer = self._invoke_with_fallback(prompt)
 			else:
