@@ -63,6 +63,12 @@ def _index_status_path(upload_dir: str) -> str:
 	return os.path.join(upload_dir, ".index_status.json")
 
 
+def _metrics_path() -> str:
+	data_dir = os.path.join(os.path.dirname(__file__), "data")
+	os.makedirs(data_dir, exist_ok=True)
+	return os.path.join(data_dir, "metrics.json")
+
+
 def _load_index_status(upload_dir: str) -> dict:
 	"""Load last-known indexing status for filenames (fast, avoids Qdrant calls on /api/documents)."""
 	path = _index_status_path(upload_dir)
@@ -284,6 +290,31 @@ async def query_ai(
 		sources_detail = response.get("sources_detail")
 		if sources_detail is not None:
 			sources_detail = [SourceDetail(document=sd["document"], chunks=sd["chunks"]) for sd in sources_detail]
+		# Update AI query metrics (simple daily counter on disk)
+		try:
+			m_path = _metrics_path()
+			if os.path.exists(m_path):
+				with open(m_path, "r", encoding="utf-8") as f:
+					metrics_data = json.load(f) or {}
+			else:
+				metrics_data = {}
+		except Exception as e:
+			logging.warning(f"Failed to read metrics file before update: {e}")
+			metrics_data = {}
+
+		try:
+			today = datetime.now().date().isoformat()
+			if not isinstance(metrics_data, dict):
+				metrics_data = {}
+			if "daily" not in metrics_data or not isinstance(metrics_data.get("daily"), dict):
+				metrics_data["daily"] = {}
+			metrics_data["daily"][today] = int(metrics_data["daily"].get(today, 0)) + 1
+			metrics_data["total_ai_queries"] = int(metrics_data.get("total_ai_queries", 0)) + 1
+			with open(m_path, "w", encoding="utf-8") as f:
+				json.dump(metrics_data, f)
+		except Exception as e:
+			logging.warning(f"Failed to update metrics file: {e}")
+
 		return QueryResponse(
 			answer=response["answer"],
 			sources=response["sources"],
@@ -564,11 +595,50 @@ async def get_dashboard_metrics(
 	"""
 	Get dashboard metrics and statistics
 	"""
+	# Judgments indexed / documents uploaded from index status
+	upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
+	total_uploaded = 0
+	total_indexed = 0
+	if os.path.isdir(upload_dir):
+		all_files = os.listdir(upload_dir)
+		status_map = _load_index_status(upload_dir)
+		status_filename = os.path.basename(_index_status_path(upload_dir))
+		for name in all_files:
+			if name == status_filename:
+				continue
+			path = os.path.join(upload_dir, name)
+			if not os.path.isfile(path):
+				continue
+			total_uploaded += 1
+			val = status_map.get(name)
+			is_indexed = bool(val.get("indexed", False)) if isinstance(val, dict) else bool(val)
+			if is_indexed:
+				total_indexed += 1
+
+	# AI queries today from metrics.json
+	ai_queries_today = 0
+	total_ai_queries = 0
+	try:
+		m_path = _metrics_path()
+		if os.path.exists(m_path):
+			with open(m_path, "r", encoding="utf-8") as f:
+				metrics_data = json.load(f) or {}
+		else:
+			metrics_data = {}
+	except Exception as e:
+		logging.warning(f"Failed to read metrics file: {e}")
+		metrics_data = {}
+
+	today = datetime.now().date().isoformat()
+	if isinstance(metrics_data, dict):
+		ai_queries_today = int(metrics_data.get("daily", {}).get(today, 0))
+		total_ai_queries = int(metrics_data.get("total_ai_queries", 0))
+
 	return {
-		"active_threats": 12,
-		"personnel_online": 247,
-		"documents_processed": 1234,
-		"ai_queries_today": 456,
+		"judgments_indexed": total_indexed,
+		"documents_uploaded": total_uploaded,
+		"ai_queries_today": ai_queries_today,
+		"total_ai_queries": total_ai_queries,
 		"last_updated": datetime.now().isoformat()
 	}
 

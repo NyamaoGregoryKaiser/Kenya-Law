@@ -11,15 +11,67 @@ import {
   FileUp,
   MessageSquare
 } from 'lucide-react';
+import axios from 'axios';
 import MapWidget from '../components/MapWidget';
 import MetricCard from '../components/MetricCard';
+import { API_BASE } from '../utils/api';
 
 const Dashboard: React.FC = () => {
+  const [metricsData, setMetricsData] = React.useState<{
+    judgments_indexed: number;
+    documents_uploaded: number;
+    ai_queries_today: number;
+    total_ai_queries: number;
+    last_updated: string;
+  } | null>(null);
+
+  React.useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/dashboard/metrics`);
+        setMetricsData(res.data);
+      } catch (e) {
+        console.error('Failed to load dashboard metrics', e);
+      }
+    };
+    load();
+    const id = setInterval(load, 60000);
+    return () => clearInterval(id);
+  }, []);
+
   const metrics = [
-    { title: 'Judgments Indexed', value: '12,456', change: '+156', changeType: 'increase' as const, icon: BookOpen, color: 'maroon' as const },
-    { title: 'Active Cases', value: '847', change: '+23', changeType: 'increase' as const, icon: Scale, color: 'gold' as const },
-    { title: 'Courts Covered', value: '5', change: '', changeType: 'neutral' as const, icon: Building2, color: 'maroon' as const },
-    { title: 'AI Queries Today', value: '1,234', change: '+89', changeType: 'increase' as const, icon: MessageSquare, color: 'gold' as const }
+    { 
+      title: 'Judgments Indexed', 
+      value: (metricsData?.judgments_indexed ?? 0).toLocaleString(), 
+      change: '', 
+      changeType: 'neutral' as const, 
+      icon: BookOpen, 
+      color: 'maroon' as const 
+    },
+    { 
+      title: 'Documents Uploaded', 
+      value: (metricsData?.documents_uploaded ?? 0).toLocaleString(), 
+      change: '', 
+      changeType: 'neutral' as const, 
+      icon: FileText, 
+      color: 'gold' as const 
+    },
+    { 
+      title: 'Courts Covered', 
+      value: '—', 
+      change: '', 
+      changeType: 'neutral' as const, 
+      icon: Building2, 
+      color: 'maroon' as const 
+    },
+    { 
+      title: 'AI Queries Today', 
+      value: (metricsData?.ai_queries_today ?? 0).toLocaleString(), 
+      change: '', 
+      changeType: 'neutral' as const, 
+      icon: MessageSquare, 
+      color: 'gold' as const 
+    }
   ];
 
   const recentJudgments = [
@@ -126,7 +178,7 @@ const Dashboard: React.FC = () => {
         </div>
         <div className="flex items-center space-x-2 text-sm text-legal-text-muted">
           <Clock className="w-4 h-4" />
-          <span>Last updated: {new Date().toLocaleTimeString()}</span>
+          <span>Last updated: {metricsData?.last_updated ? new Date(metricsData.last_updated).toLocaleTimeString() : '—'}</span>
         </div>
       </div>
 
