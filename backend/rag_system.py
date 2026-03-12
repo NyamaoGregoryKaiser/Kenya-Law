@@ -237,7 +237,7 @@ class PatriotAIRAGSystem:
 			# Return False but don't raise - file deletion should still proceed
 			return False
 	
-	def search_documents(self, query: str, k: int = 3):
+	def search_documents(self, query: str, k: int = 6):
 		try:
 			if not self.vectorstore:
 				logger.warning("Vector store not initialized")
@@ -316,9 +316,11 @@ class PatriotAIRAGSystem:
 					"Do not use any other knowledge, general legal knowledge, or information from outside the Context. "
 					"If the Context does not contain enough information to answer the question, say: "
 					"'This information was not found in your uploaded documents.' "
-					"However, if the Context clearly identifies a person by name or as an appellant (for example, '1st appellant', "
-					"'2nd appellant', etc.), you may state who they are in the case and briefly summarize what happened to them in the "
-					"judgment, but only if that information appears in the Context. "
+					"However, if the Context clearly identifies a person by name or as an appellant (e.g. '1st appellant', '2nd appellant'), "
+					"you may state who they are and briefly summarize what happened to them in the judgment. "
+					"If the Context mentions a case number or citation (e.g. H.C.CR.A. NO.527 OF 2003, Criminal Appeal No. 85 & 86 of 2007, "
+					"or 'appeal from ... in H.C.CR.A. NO.527 OF 2003'), explain what that case or reference is about based on the Context—for example, "
+					"that it is the High Court criminal appeal reference for the same matter, or the Court of Appeal case that heard the appeal. "
 					"Quote or paraphrase only from the Context. Do not add facts, cases, or principles not present in the Context.\n\n"
 					f"Question: {query}\n\nContext:\n{context}\n\n"
 					"Answer based strictly on the Context above:"
