@@ -412,6 +412,23 @@ const Uploads: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Full-screen overlay while uploading/indexing */}
+      {isUploading && (
+        <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center">
+          <div className="bg-white rounded-xl shadow-2xl px-6 py-5 flex items-center gap-4 max-w-md w-[90%]">
+            <div className="w-8 h-8 border-2 border-legal-maroon border-t-transparent rounded-full animate-spin" />
+            <div>
+              <p className="font-semibold text-legal-text">
+                Uploading and indexing document…
+              </p>
+              <p className="text-sm text-legal-text-muted">
+                This may take a moment while we process your judgment and add it to the AI index.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
