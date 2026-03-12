@@ -229,41 +229,33 @@ class PatriotAIRAGSystem:
 			if self.vectorstore is None:
 				logger.debug(f"Vector store not initialized, {filename} not indexed")
 				return False
-			# Search for documents with this filename in metadata
-			# Use a simple search to check if any chunks exist for this filename
-			if hasattr(self.vectorstore, '_collection'):
+			# Qdrant: exact, fast existence check using payload filter (avoid costly similarity_search).
+			if getattr(self, "_qdrant_client", None) and getattr(self, "_qdrant_collection", None) and Filter is not None:
 				try:
-					# Query Chroma collection directly using where clause
-					results = self.vectorstore._collection.get(where={"filename": filename}, limit=1)
-					if results and isinstance(results, dict):
-						ids = results.get("ids", [])
-						is_indexed = len(ids) > 0
-						if is_indexed:
-							logger.debug(f"Document {filename} is indexed ({len(ids)} chunks found)")
-						return is_indexed
-					return False
-				except Exception as coll_error:
-					logger.warning(f"Chroma collection query failed for {filename}: {coll_error}")
-					# Fallback to search method
-					try:
-						results = self.vectorstore.similarity_search("", k=1000)
-						for doc in results:
-							if doc.metadata.get("filename") == filename:
-								logger.debug(f"Document {filename} found via search fallback")
-								return True
-					except Exception as search_error:
-						logger.warning(f"Search fallback also failed for {filename}: {search_error}")
-					return False
-			else:
-				# Fallback: try searching with empty query and check metadata
-				try:
-					results = self.vectorstore.similarity_search("", k=1000)
-					for doc in results:
-						if doc.metadata.get("filename") == filename:
-							logger.debug(f"Document {filename} found via search")
-							return True
-				except Exception as search_error:
-					logger.warning(f"Search failed for {filename}: {search_error}")
+					metadata_key = getattr(self.vectorstore, "metadata_payload_key", "metadata")
+					scroll_filter = Filter(
+						must=[
+							FieldCondition(key=f"{metadata_key}.filename", match=MatchValue(value=filename)),
+						]
+					)
+					records, _ = self._qdrant_client.scroll(
+						collection_name=self._qdrant_collection,
+						scroll_filter=scroll_filter,
+						limit=1,
+						with_payload=False,
+						with_vectors=False,
+					)
+					return bool(records)
+				except Exception as e:
+					logger.warning(f"Qdrant indexed-check failed for {filename}: {e}")
+					# Fall through to semantic fallback
+
+			# Fallback: semantic check (best-effort). This can be slow on large collections.
+			try:
+				results = self.vectorstore.similarity_search(filename, k=3)
+				return any((doc.metadata or {}).get("filename") == filename for doc in results)
+			except Exception as search_error:
+				logger.warning(f"Search fallback failed for {filename}: {search_error}")
 				return False
 		except Exception as e:
 			logger.warning(f"Failed to check if document {filename} is indexed: {e}")
@@ -275,15 +267,24 @@ class PatriotAIRAGSystem:
 			if self.vectorstore is None:
 				logger.warning("Vector store not initialized; cannot delete from vector store")
 				return False
-			# Try to delete documents matching the filename in metadata
-			# Access Chroma collection directly for metadata-based deletion
-			if hasattr(self.vectorstore, '_collection'):
-				self.vectorstore._collection.delete(where={"filename": filename})
-				logger.info(f"Deleted document {filename} from vector store")
+			# Qdrant: delete by metadata filter (fast, exact).
+			if getattr(self, "_qdrant_client", None) and getattr(self, "_qdrant_collection", None) and Filter is not None:
+				metadata_key = getattr(self.vectorstore, "metadata_payload_key", "metadata")
+				delete_filter = Filter(
+					must=[
+						FieldCondition(key=f"{metadata_key}.filename", match=MatchValue(value=filename)),
+					]
+				)
+				self._qdrant_client.delete(
+					collection_name=self._qdrant_collection,
+					points_selector=delete_filter,
+				)
+				logger.info(f"Deleted document {filename} from Qdrant vector store")
 				return True
-			else:
-				logger.warning(f"Could not access Chroma collection to delete {filename}")
-				return False
+
+			# Fallback: if some other vectorstore is used, we can't safely delete by metadata here.
+			logger.warning(f"Vector store does not support metadata delete for {filename}")
+			return False
 		except Exception as e:
 			logger.warning(f"Failed to delete document {filename} from vector store: {e}")
 			# Return False but don't raise - file deletion should still proceed
