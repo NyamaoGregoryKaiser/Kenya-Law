@@ -419,13 +419,13 @@ class PatriotAIRAGSystem:
 		try:
 			# ---- Retrieval (first pass, narrow) ----
 			retrieval_start = time.time()
-			relevant_docs = self.search_documents(query, k=6)
+			relevant_docs = self.search_documents(query, k=10)
 			logger.info(f"retrieval pass1: {len(relevant_docs)} chunks in {time.time() - retrieval_start:.2f}s")
 
 			# If retrieval is very weak, try a broader second pass before giving up
-			if len(relevant_docs) < 2:
+			if len(relevant_docs) < 3:
 				retrieval2_start = time.time()
-				broader_docs = self.search_documents(query, k=15)
+				broader_docs = self.search_documents(query, k=40)
 				logger.info(f"retrieval pass2: {len(broader_docs)} chunks in {time.time() - retrieval2_start:.2f}s")
 				# Prefer second-pass results only if they add something
 				if len(broader_docs) > len(relevant_docs):
