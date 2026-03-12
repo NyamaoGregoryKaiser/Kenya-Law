@@ -6,6 +6,7 @@ Integrates document indexing, vector search, and AI-powered responses
 import os
 import logging
 import time
+import re
 from typing import List, Dict, Any
 from datetime import datetime
 
@@ -299,6 +300,45 @@ class PatriotAIRAGSystem:
 		except Exception as e:
 			logger.error(f"Failed to search documents: {e}")
 			return []
+
+	def _extract_case_hint(self, query: str) -> str | None:
+		"""
+		Best-effort extraction of a case-number style hint from the query,
+		so we can bias retrieval towards files whose filenames match it.
+
+		Examples it should pick up:
+		- CIVIL APPEAL NO. 39 OF 2017
+		- CRIMINAL APPEAL NO. 85 & 86 OF 2007
+		- CIVIL APPLICATION NO. E073 OF 2023
+		- KISUMU CIV APPEAL NO 39 OF 2017
+		"""
+		try:
+			q = " ".join((query or "").upper().split())
+
+			# Generic "<TYPE> APPEAL NO. ... 2017"
+			m = re.search(r"(CIVIL|CRIMINAL)\s+APPEAL\s+NO\.?\s+[^\n]+?\d{4}", q)
+			if m:
+				return m.group(0)
+
+			# "<TYPE> APPLICATION NO. E073 OF 2023"
+			m = re.search(r"(CIVIL|CRIMINAL)\s+APPLICATION\s+NO\.?\s+[^\n]+?\d{4}", q)
+			if m:
+				return m.group(0)
+
+			# Registry-prefixed patterns: "KISUMU CIV APP NO 39 OF 2017"
+			m = re.search(r"(KISUMU|MOMBASA|NAIROBI|MALINDI)\s+[A-Z]+\s+APP(?:EAL|\.?)\s+NO\.?\s+[^\n]+?\d{4}", q)
+			if m:
+				return m.group(0)
+
+			# Fallback: "<TYPE> APPEAL NO. 39" (no year)
+			m = re.search(r"(CIVIL|CRIMINAL)\s+APPEAL\s+NO\.?\s+\d+", q)
+			if m:
+				return m.group(0)
+
+			return None
+		except Exception as e:
+			logger.debug(f"Failed to extract case hint from query '{query}': {e}")
+			return None
 	
 	def _ensure_header_chunks(self, relevant_docs: List[Document]) -> List[Document]:
 		"""For each document in results, ensure its header chunk (case caption, parties) is included so party names are in context."""
@@ -390,6 +430,23 @@ class PatriotAIRAGSystem:
 				# Prefer second-pass results only if they add something
 				if len(broader_docs) > len(relevant_docs):
 					relevant_docs = broader_docs
+
+			# Bias results towards filenames matching a case hint from the query
+			case_hint = self._extract_case_hint(query)
+			if case_hint and relevant_docs:
+				norm_hint = re.sub(r"\s+", "", case_hint).lower()
+
+				def _fname_score(doc):
+					fname = (doc.metadata.get("filename") or "").lower()
+					fname_norm = re.sub(r"\s+", "", fname)
+					# 0 = strong match (comes first), 1 = others
+					return 0 if norm_hint and norm_hint in fname_norm else 1
+
+				try:
+					relevant_docs.sort(key=_fname_score)
+					logger.info(f"case_hint applied: '{case_hint}'")
+				except Exception as e:
+					logger.debug(f"Failed to sort by case_hint '{case_hint}': {e}")
 
 			# Ensure header chunks (case caption, parties) are included when any chunk from a doc is retrieved.
 			header_start = time.time()
