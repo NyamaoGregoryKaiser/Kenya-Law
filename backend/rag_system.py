@@ -16,12 +16,17 @@ except ImportError:
 	# Fallback to old langchain import (langchain==0.0.350)
 	from langchain.text_splitter import RecursiveCharacterTextSplitter
 
+from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredWordDocumentLoader
 from qdrant_client import QdrantClient
 try:
-	from qdrant_client.models import VectorParams, Distance
+	from qdrant_client.models import VectorParams, Distance, Filter, FieldCondition, MatchValue
 except ImportError:
 	from qdrant_client.http.models import VectorParams, Distance
+	try:
+		from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+	except ImportError:
+		Filter = FieldCondition = MatchValue = None  # header fetch will be skipped
 from langchain_community.vectorstores import Qdrant
 from langchain_community.chat_models import ChatOllama
 from langchain_community.embeddings import OllamaEmbeddings
@@ -32,6 +37,9 @@ OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:3b")
 OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
 MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "6000"))
+# Structure-aware chunking: header (case title, court, parties) as its own chunk so it is retrievable.
+HEADER_MAX_CHARS = int(os.getenv("RAG_HEADER_MAX_CHARS", "1500"))
+JUDGMENT_MARKERS = ("JUDGMENT OF THE COURT", "JUDGMENT\n", "\n\nJUDGMENT ")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rag_system")
@@ -70,6 +78,8 @@ class PatriotAIRAGSystem:
 		self.embeddings = None
 		self.vectorstore = None
 		self.llm = None
+		self._qdrant_client = None
+		self._qdrant_collection = None
 		self._initialize_llm()
 		self._initialize_vectorstore()
 	
@@ -124,10 +134,14 @@ class PatriotAIRAGSystem:
 				collection_name=collection_name,
 				embeddings=self.embeddings,
 			)
+			self._qdrant_client = client
+			self._qdrant_collection = collection_name
 			logger.info(f"Vector store initialized (Qdrant collection={collection_name})")
 		except Exception as e:
 			logger.error(f"Vector store initialization failed: {e}", exc_info=True)
 			self.vectorstore = None
+			self._qdrant_client = None
+			self._qdrant_collection = None
 	
 	def _load_document(self, file_path: str):
 		try:
@@ -148,8 +162,46 @@ class PatriotAIRAGSystem:
 			logger.error(f"Failed to load document {file_path}: {e}")
 			return []
 	
-	def _split_documents(self, documents):
-		return RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(documents)
+	def _split_documents(self, documents, source_path: str = None):
+		"""Structure-aware chunking: header (case title, court, parties) as its own chunk so party names are retrievable."""
+		if not documents:
+			return []
+		source_path = source_path or documents[0].metadata.get("source", "Unknown")
+		filename = os.path.basename(source_path) if source_path else "Unknown"
+		full_text = "\n\n".join(d.page_content for d in documents).strip()
+		if not full_text:
+			return []
+		# Header = text before "JUDGMENT OF THE COURT" / "JUDGMENT" or first HEADER_MAX_CHARS (case caption + parties).
+		header_end = len(full_text)
+		for marker in JUDGMENT_MARKERS:
+			idx = full_text.find(marker)
+			if idx >= 0:
+				header_end = min(header_end, idx)
+		header_end = min(header_end, HEADER_MAX_CHARS)
+		header_text = full_text[:header_end].strip()
+		body_text = full_text[header_end:].strip()
+		result = []
+		if header_text:
+			header_doc = Document(
+				page_content=header_text,
+				metadata={
+					"source": source_path,
+					"filename": filename,
+					"chunk_index": 0,
+					"is_header": True,
+				},
+			)
+			result.append(header_doc)
+		if body_text:
+			body_doc = Document(page_content=body_text, metadata={"source": source_path, "filename": filename})
+			body_chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents([body_doc])
+			for i, doc in enumerate(body_chunks):
+				doc.metadata["chunk_index"] = len(result) + i
+				doc.metadata["is_header"] = False
+				doc.metadata["source"] = source_path
+				doc.metadata["filename"] = filename
+			result.extend(body_chunks)
+		return result
 	
 	def index_document(self, file_path: str, metadata: Dict[str, Any] = None):
 		"""Returns (success: bool, message: str)."""
@@ -160,7 +212,7 @@ class PatriotAIRAGSystem:
 			documents = self._load_document(file_path)
 			if not documents:
 				return False, "Could not load document (install 'unstructured' for DOC/DOCX, or check file format)."
-			split_docs = self._split_documents(documents)
+			split_docs = self._split_documents(documents, source_path=file_path)
 			if metadata:
 				for d in split_docs:
 					d.metadata.update(metadata)
@@ -247,6 +299,50 @@ class PatriotAIRAGSystem:
 			logger.error(f"Failed to search documents: {e}")
 			return []
 	
+	def _ensure_header_chunks(self, relevant_docs: List[Document]) -> List[Document]:
+		"""For each document in results, ensure its header chunk (case caption, parties) is included so party names are in context."""
+		if not relevant_docs or not getattr(self, "_qdrant_client", None) or not getattr(self, "_qdrant_collection", None):
+			return relevant_docs
+		if Filter is None or FieldCondition is None or MatchValue is None:
+			return relevant_docs
+		sources_with_header = {doc.metadata.get("source") for doc in relevant_docs if doc.metadata.get("is_header") or doc.metadata.get("chunk_index") == 0}
+		unique_sources = {doc.metadata.get("source", "Unknown") for doc in relevant_docs}
+		missing = unique_sources - sources_with_header
+		if not missing:
+			return relevant_docs
+		# LangChain Qdrant stores payload as page_content + metadata (nested under "metadata" key).
+		content_key = getattr(self.vectorstore, "content_payload_key", "page_content")
+		metadata_key = getattr(self.vectorstore, "metadata_payload_key", "metadata")
+		header_docs = []
+		for source in missing:
+			try:
+				scroll_filter = Filter(must=[
+					FieldCondition(key=f"{metadata_key}.source", match=MatchValue(value=source)),
+					FieldCondition(key=f"{metadata_key}.chunk_index", match=MatchValue(value=0)),
+				])
+				records, _ = self._qdrant_client.scroll(
+					collection_name=self._qdrant_collection,
+					scroll_filter=scroll_filter,
+					limit=1,
+					with_payload=True,
+					with_vectors=False,
+				)
+				if records and len(records) > 0:
+					point = records[0]
+					payload = point.payload or {}
+					content = payload.get(content_key) or payload.get("page_content", "")
+					meta = payload.get(metadata_key) or payload
+					if isinstance(meta, dict):
+						meta = dict(meta)
+					else:
+						meta = {}
+					header_docs.append(Document(page_content=content, metadata=meta))
+					logger.debug(f"Included header chunk for source: {source[:80]}...")
+			except Exception as e:
+				logger.debug(f"Could not fetch header for source {source[:50]}...: {e}")
+		# Prepend header chunks so they appear before body chunks in context.
+		return header_docs + relevant_docs
+	
 	def web_search(self, query: str, num_results: int = 0):
 		# Web search disabled; answers are based only on uploaded documents.
 		return []
@@ -279,6 +375,8 @@ class PatriotAIRAGSystem:
 		"""
 		try:
 			relevant_docs = self.search_documents(query)
+			# Ensure header chunks (case caption, parties) are included when any chunk from a doc is retrieved.
+			relevant_docs = self._ensure_header_chunks(relevant_docs)
 			# Documents-only: do not use web search for the answer
 			context = ""
 			# Group chunks by document path so we can return each document once with its chunks
@@ -313,15 +411,13 @@ class PatriotAIRAGSystem:
 			if self.llm:
 				prompt = (
 					"You are Kenya Law AI. You must answer ONLY using the text in the Context below. "
-					"Do not use any other knowledge, general legal knowledge, or information from outside the Context. "
+					"Do not use any other knowledge or information from outside the Context. "
 					"If the Context does not contain enough information to answer the question, say: "
 					"'This information was not found in your uploaded documents.' "
-					"However, if the Context clearly identifies a person by name or as an appellant (e.g. '1st appellant', '2nd appellant'), "
-					"you may state who they are and briefly summarize what happened to them in the judgment. "
-					"If the Context mentions a case number or citation (e.g. H.C.CR.A. NO.527 OF 2003, Criminal Appeal No. 85 & 86 of 2007, "
-					"or 'appeal from ... in H.C.CR.A. NO.527 OF 2003'), explain what that case or reference is about based on the Context—for example, "
-					"that it is the High Court criminal appeal reference for the same matter, or the Court of Appeal case that heard the appeal. "
-					"Quote or paraphrase only from the Context. Do not add facts, cases, or principles not present in the Context.\n\n"
+					"Do NOT state that information is absent, missing, or 'not explicitly named' if it clearly appears in the Context—e.g. party names (appellants, respondent), "
+					"case numbers, or citations. If the Context lists parties (e.g. '1ST APPELLANT', '2ND APPELLANT', names before 'APPELLANT' or 'RESPONDENT'), "
+					"you MUST list them in your answer. If the Context mentions a case number or citation, explain what it refers to from the Context. "
+					"Quote or paraphrase only from the Context. Do not add facts or principles not present in the Context.\n\n"
 					f"Question: {query}\n\nContext:\n{context}\n\n"
 					"Answer based strictly on the Context above:"
 				)
