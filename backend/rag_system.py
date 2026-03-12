@@ -18,9 +18,13 @@ except ImportError:
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredWordDocumentLoader
 from qdrant_client import QdrantClient
-from langchain_community.vectorstores import Qdrant
-from langchain_community.chat_models import ChatOllama
-from langchain_community.embeddings import OllamaEmbeddings
+try:
+	from langchain_ollama import ChatOllama, OllamaEmbeddings
+	from langchain_qdrant import Qdrant as QdrantVectorStore
+except ImportError:
+	from langchain_community.chat_models import ChatOllama
+	from langchain_community.embeddings import OllamaEmbeddings
+	from langchain_community.vectorstores import Qdrant as QdrantVectorStore
 
 # Local Ollama configuration (LLM + embeddings)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
@@ -100,7 +104,7 @@ class PatriotAIRAGSystem:
 
 			client = QdrantClient(host=qdrant_host, port=qdrant_port)
 
-			self.vectorstore = Qdrant(
+			self.vectorstore = QdrantVectorStore(
 				client=client,
 				collection_name=collection_name,
 				embeddings=self.embeddings,
