@@ -165,7 +165,6 @@ class PatriotAIRAGSystem:
 				for d in split_docs:
 					d.metadata.update(metadata)
 			self.vectorstore.add_documents(split_docs)
-			self.vectorstore.persist()
 			logger.info(f"Successfully indexed {file_path}")
 			return True, "Indexed for AI search."
 		except Exception as e:
