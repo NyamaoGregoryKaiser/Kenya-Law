@@ -50,6 +50,7 @@ const Uploads: React.FC = () => {
   const [showMetadataForm, setShowMetadataForm] = useState(false);
   const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [loadingList, setLoadingList] = useState(true);
+  const [showAllDocuments, setShowAllDocuments] = useState(false);
   const [metadata, setMetadata] = useState({
     caseName: '',
     court: '',
@@ -58,9 +59,11 @@ const Uploads: React.FC = () => {
     citation: ''
   });
 
-  const fetchDocuments = useCallback(async () => {
+  const fetchDocuments = useCallback(async (opts?: { showAll?: boolean }) => {
     try {
-      const res = await axios.get(`${API_BASE}/documents`);
+      const showAll = Boolean(opts?.showAll);
+      const limitParam = showAll ? '0' : '50';
+      const res = await axios.get(`${API_BASE}/documents?limit=${limitParam}`);
       const documents = res.data?.documents || [];
       console.log(`Fetched ${documents.length} documents from API`);
       const list = documents.map((d: { filename: string; size: number; uploaded_at: string; indexed: boolean }) => ({
@@ -83,7 +86,7 @@ const Uploads: React.FC = () => {
   }, []);
 
   React.useEffect(() => {
-    fetchDocuments();
+    fetchDocuments({ showAll: false });
   }, [fetchDocuments]);
 
   const uploadFile = async (file: File, meta: typeof metadata) => {
@@ -129,7 +132,7 @@ const Uploads: React.FC = () => {
       }
       
       // Refresh document list to ensure accurate status from backend
-      await fetchDocuments();
+      await fetchDocuments({ showAll: showAllDocuments });
     } catch (error) {
       setDocuments(prev =>
         prev.map(doc =>
@@ -199,7 +202,7 @@ const Uploads: React.FC = () => {
         toast.success('Document deleted successfully');
         
         // Refresh the list to ensure consistency
-        await fetchDocuments();
+        await fetchDocuments({ showAll: showAllDocuments });
       } else {
         throw new Error(`Unexpected status code: ${response.status}`);
       }
@@ -538,6 +541,20 @@ const Uploads: React.FC = () => {
               <li>• Documents are processed securely and stored confidentially</li>
             </ul>
           </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={async () => {
+              setLoadingList(true);
+              const next = !showAllDocuments;
+              setShowAllDocuments(next);
+              await fetchDocuments({ showAll: next });
+            }}
+            className="px-4 py-2 rounded-lg border border-legal-border bg-legal-white text-legal-text hover:bg-legal-bg transition-colors text-sm font-medium"
+            disabled={loadingList}
+          >
+            {showAllDocuments ? 'Show recent only' : 'View all documents'}
+          </button>
         </div>
       </div>
     </div>

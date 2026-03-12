@@ -295,8 +295,15 @@ async def query_ai(
 		raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/documents", response_model=DocumentListResponse)
-async def list_documents(current_user: dict = Depends(get_current_user)):
-	"""List uploaded documents (for Uploads page)."""
+async def list_documents(
+	limit: int = 50,
+	current_user: dict = Depends(get_current_user)
+):
+	"""List uploaded documents (for Uploads page).
+
+	Default returns only the most recently modified files to keep the UI fast.
+	Set limit<=0 to return all documents.
+	"""
 	upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
 	documents = []
 	try:
@@ -331,6 +338,9 @@ async def list_documents(current_user: dict = Depends(get_current_user)):
 					continue
 		# newest first
 		documents.sort(key=lambda d: d.uploaded_at, reverse=True)
+		# return only the most recent N (unless caller requests all)
+		if limit and limit > 0:
+			documents = documents[:limit]
 		logging.info(f"Listed {len(documents)} documents from {upload_dir}")
 	except Exception as e:
 		logging.error(f"Error listing documents: {e}", exc_info=True)
