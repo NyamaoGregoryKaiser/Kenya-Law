@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 import os
 import logging
+import time
 from datetime import datetime
 import shutil
 
@@ -52,8 +53,8 @@ async def log_requests(request, call_next):
 	return response
 
 # Log environment status at startup
-import os
-logging.info(f"GOOGLE_API_KEY present: {bool(os.getenv('GOOGLE_API_KEY'))}")
+logging.info("Answer model for /api/query: local Ollama only (no Gemini/Google). See rag_system logs for model name.")
+logging.info(f"GOOGLE_API_KEY present: {bool(os.getenv('GOOGLE_API_KEY'))} (unused for answers)")
 logging.info(f"SERPAPI_API_KEY present: {bool(os.getenv('SERPAPI_API_KEY'))}")
 
 # Add CORS middleware
@@ -231,9 +232,11 @@ async def query_ai(
 			)
 
 		# Rewrite short follow-up questions using conversation history
+		query_rewrite_start = time.time()
 		rewritten_query = _rewrite_query_if_followup(request)
+		logging.info(f"query_rewrite took {time.time() - query_rewrite_start:.2f}s")
 
-		# Use the RAG system to generate response
+		# RAG: retrieval (Qdrant) + answer generation (local Ollama only, no Gemini)
 		response = rag_system.generate_response(
 			query=f"{role_preamble}{rewritten_query}",
 			use_web_search=request.use_web_search

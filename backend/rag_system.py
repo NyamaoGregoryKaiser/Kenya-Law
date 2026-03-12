@@ -92,7 +92,7 @@ class PatriotAIRAGSystem:
 				temperature=0.1,
 			)
 			self.llm_fallback = None
-			logger.info(f"Using local Ollama LLM ({OLLAMA_LLM_MODEL}) at {OLLAMA_BASE_URL}")
+			logger.info(f"Answer generation: local Ollama only (model={OLLAMA_LLM_MODEL}, base_url={OLLAMA_BASE_URL}). No Gemini/Google.")
 		except Exception as e:
 			logger.error(f"Failed to initialize Ollama LLM: {e}")
 			self.llm = None
@@ -208,7 +208,7 @@ class PatriotAIRAGSystem:
 		try:
 			if self.vectorstore is None:
 				logger.warning("Vector store not initialized; skipping index")
-				return False, "Vector store not initialized. Check GOOGLE_API_KEY and server logs."
+				return False, "Vector store not initialized. Check Ollama and Qdrant and server logs."
 			documents = self._load_document(file_path)
 			if not documents:
 				return False, "Could not load document (install 'unstructured' for DOC/DOCX, or check file format)."
@@ -372,11 +372,18 @@ class PatriotAIRAGSystem:
 		Generate a response using ONLY the uploaded/indexed documents.
 		No external knowledge or web search is used. If no relevant documents
 		are found, return a clear message without calling the LLM.
+		Answer model: local Ollama only (no Gemini).
 		"""
+		t0 = time.time()
 		try:
+			# ---- Retrieval ----
+			retrieval_start = time.time()
 			relevant_docs = self.search_documents(query)
+			logger.info(f"retrieval: {len(relevant_docs)} chunks in {time.time() - retrieval_start:.2f}s")
 			# Ensure header chunks (case caption, parties) are included when any chunk from a doc is retrieved.
+			header_start = time.time()
 			relevant_docs = self._ensure_header_chunks(relevant_docs)
+			logger.info(f"header_merge: {time.time() - header_start:.2f}s, total chunks now {len(relevant_docs)}")
 			# Documents-only: do not use web search for the answer
 			context = ""
 			# Group chunks by document path so we can return each document once with its chunks
@@ -390,6 +397,7 @@ class PatriotAIRAGSystem:
 
 			# No relevant documents: do not call the LLM; answer only from uploaded data
 			if not relevant_docs or not context.strip():
+				logger.info(f"total /api/query (no docs): {time.time() - t0:.2f}s")
 				return {
 					"answer": (
 						"This information was not found in your uploaded documents. "
@@ -421,11 +429,13 @@ class PatriotAIRAGSystem:
 					f"Question: {query}\n\nContext:\n{context}\n\n"
 					"Answer based strictly on the Context above:"
 				)
+				gen_start = time.time()
 				answer = self._invoke_with_fallback(prompt)
+				logger.info(f"generation (Ollama {OLLAMA_LLM_MODEL}): {time.time() - gen_start:.2f}s")
 			else:
 				answer = (
 					f"No LLM configured. Based on your query, {len(relevant_docs)} relevant passage(s) were found in your uploaded documents. "
-					"Configure GOOGLE_API_KEY to get answers generated from this content only."
+					"Start Ollama locally to get answers generated from this content."
 				)
 
 			# Unique document paths for backward compatibility; sources_detail for UI (document -> chunks)
@@ -435,17 +445,27 @@ class PatriotAIRAGSystem:
 				for path, chunks in by_document.items()
 			]
 
+			# Dynamic confidence from retrieval strength: few chunks -> low, more chunks -> higher
+			num_chunks = len(relevant_docs)
+			if num_chunks < 2:
+				confidence = 0.35  # low: weak retrieval
+			else:
+				confidence = min(0.35 + (num_chunks - 1) * 0.125, 0.85)
+			if not self.llm:
+				confidence = min(confidence, 0.6)
+
+			logger.info(f"total /api/query: {time.time() - t0:.2f}s")
 			return {
 				"answer": str(answer).strip(),
 				"sources": sources,
 				"sources_detail": sources_detail,
-				"confidence": 0.85 if self.llm and relevant_docs else 0.6,
+				"confidence": round(confidence, 2),
 				"timestamp": datetime.now().isoformat(),
-				"documents_found": len(relevant_docs),
+				"documents_found": num_chunks,
 				"web_sources": 0
 			}
 		except Exception as e:
-			logger.error(f"Failed to generate response: {e}")
+			logger.error(f"Failed to generate response after {time.time() - t0:.2f}s: {e}")
 			return {
 				"answer": f"I encountered an error processing your query: {str(e)}",
 				"sources": [],
