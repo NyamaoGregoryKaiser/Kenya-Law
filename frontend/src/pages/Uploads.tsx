@@ -1,6 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { useDropzone } from 'react-dropzone';
-import { Upload, FileText, Trash2, Eye, Download, CheckCircle, AlertCircle, Scale, BookOpen, Gavel } from 'lucide-react';
+import { FileText, Trash2, Eye, Download, CheckCircle, AlertCircle, Scale, BookOpen, Gavel } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
 import { API_BASE } from '../utils/api';
@@ -47,19 +46,11 @@ const LEGAL_AREAS = [
 const Uploads: React.FC = () => {
   const [documents, setDocuments] = useState<UploadedDocument[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [showMetadataForm, setShowMetadataForm] = useState(false);
-  const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [showAllDocuments, setShowAllDocuments] = useState(false);
   const [totalIndexed, setTotalIndexed] = useState(0);
   const [totalUploaded, setTotalUploaded] = useState(0);
-  const [metadata, setMetadata] = useState({
-    caseName: '',
-    court: '',
-    year: new Date().getFullYear().toString(),
-    legalArea: '',
-    citation: ''
-  });
+  const RECENT_LIMIT = 10;
 
   const fetchDocuments = useCallback(async (opts?: { showAll?: boolean }) => {
     try {
@@ -70,13 +61,14 @@ const Uploads: React.FC = () => {
       setTotalIndexed(Number(res.data?.total_indexed ?? 0));
       setTotalUploaded(Number(res.data?.total_uploaded ?? 0));
       console.log(`Fetched ${documents.length} documents from API`);
-      const list = documents.map((d: { filename: string; size: number; uploaded_at: string; indexed: boolean }) => ({
+      const list = documents.map((d: { filename: string; size: number; uploaded_at: string; indexed: boolean; indexed_at?: string | null }) => ({
         id: d.filename,
         filename: d.filename,
         size: d.size,
         type: '',
         status: d.indexed ? 'indexed' as const : 'uploaded' as const,
-        uploadedAt: new Date(d.uploaded_at)
+        uploadedAt: new Date(d.uploaded_at),
+        indexedAt: d.indexed_at ? new Date(d.indexed_at) : undefined,
       }));
       console.log(`Mapped ${list.length} documents, setting state`);
       setDocuments(list);
@@ -93,7 +85,7 @@ const Uploads: React.FC = () => {
     fetchDocuments({ showAll: false });
   }, [fetchDocuments]);
 
-  const uploadFile = async (file: File, meta: typeof metadata) => {
+  const uploadFile = async (file: File) => {
     const document: UploadedDocument = {
       id: Date.now().toString() + Math.random(),
       filename: file.name,
@@ -101,7 +93,6 @@ const Uploads: React.FC = () => {
       type: file.type,
       status: 'uploading',
       uploadedAt: new Date(),
-      ...meta
     };
 
     setDocuments(prev => [document, ...prev]);
@@ -131,7 +122,7 @@ const Uploads: React.FC = () => {
       if (response.data.indexed) {
         toast.success(`${file.name} uploaded and indexed for AI search`);
       } else {
-        const msg = response.data.index_message || 'Indexing unavailable. Set GOOGLE_API_KEY and install unstructured for DOC/DOCX.';
+        const msg = response.data.index_message || 'Indexing unavailable. Check backend logs.';
         toast.success(`${file.name} uploaded. ${msg}`, { duration: 6000 });
       }
       
@@ -149,42 +140,22 @@ const Uploads: React.FC = () => {
     }
   };
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      setCurrentFile(acceptedFiles[0]);
-      setShowMetadataForm(true);
-    }
-  }, []);
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
 
-  const handleMetadataSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentFile) return;
-
-    setShowMetadataForm(false);
     setIsUploading(true);
-    await uploadFile(currentFile, metadata);
-    setIsUploading(false);
-    setCurrentFile(null);
-    setMetadata({
-      caseName: '',
-      court: '',
-      year: new Date().getFullYear().toString(),
-      legalArea: '',
-      citation: ''
-    });
+    try {
+      for (const f of files) {
+        // sequential upload to avoid overloading the backend
+        // eslint-disable-next-line no-await-in-loop
+        await uploadFile(f);
+      }
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
   };
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'text/plain': ['.txt'],
-      'application/msword': ['.doc'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx']
-    },
-    maxSize: 10 * 1024 * 1024,
-    disabled: isUploading || showMetadataForm
-  });
 
   const deleteDocument = async (id: string) => {
     try {
@@ -253,169 +224,57 @@ const Uploads: React.FC = () => {
     return <span className={badgeClass}>{court}</span>;
   };
 
+  const recentFiles = [...documents]
+    .filter((d) => d.status === 'indexed')
+    .sort((a, b) => (new Date(b.indexedAt || b.uploadedAt).getTime() - new Date(a.indexedAt || a.uploadedAt).getTime()))
+    .slice(0, showAllDocuments ? undefined : RECENT_LIMIT);
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-legal-maroon flex items-center justify-center shadow-legal">
-            <BookOpen className="w-6 h-6 text-legal-gold" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-serif font-bold text-legal-text">
-              Case & Statute Uploads
-            </h1>
-            <p className="text-legal-text-muted">
-              Upload judgments for AI indexing
-            </p>
-          </div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-2xl font-semibold">Case & Statute Uploads</h2>
+          <p className="text-sm text-gray-500">Upload judgments for AI indexing</p>
+          <p className="text-sm text-gray-500 mt-1">
+            <span className="font-semibold">{totalIndexed}</span> indexed documents (of {totalUploaded} uploaded)
+          </p>
         </div>
-        <div className="text-sm text-legal-text-muted bg-legal-gold-light px-4 py-2 rounded-lg border border-legal-gold/30">
-          <span className="font-semibold text-legal-gold-dark">{totalIndexed}</span> indexed documents
-          <span className="text-legal-text-muted"> (of {totalUploaded} uploaded)</span>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={async () => {
+              setLoadingList(true);
+              const next = !showAllDocuments;
+              setShowAllDocuments(next);
+              await fetchDocuments({ showAll: next });
+            }}
+            className="px-4 py-2 rounded-lg border border-legal-border bg-legal-white text-legal-text hover:bg-legal-bg transition-colors text-sm font-medium"
+            disabled={loadingList || isUploading}
+          >
+            {showAllDocuments ? 'Show recent only' : 'View all documents'}
+          </button>
+
+          <button
+            onClick={() => document.getElementById("fileInput")?.click()}
+            className="px-4 py-2 rounded-lg bg-[#8B1E3F] text-white hover:opacity-90"
+            disabled={isUploading}
+          >
+            + Add Document
+          </button>
+
+          <input
+            id="fileInput"
+            type="file"
+            accept=".pdf,.txt,.doc,.docx"
+            multiple
+            className="hidden"
+            onChange={handleFileUpload}
+          />
         </div>
       </div>
 
-      {/* Metadata Form Modal */}
-      {showMetadataForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg mx-4 shadow-2xl">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-lg bg-legal-maroon-light flex items-center justify-center">
-                <Scale className="w-5 h-5 text-legal-maroon" />
-              </div>
-              <div>
-                <h3 className="text-lg font-serif font-semibold text-legal-text">Document Metadata</h3>
-                <p className="text-sm text-legal-text-muted">Add details for: {currentFile?.name}</p>
-              </div>
-            </div>
-
-            <form onSubmit={handleMetadataSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-legal-text mb-1">Case Name / Title</label>
-                <input
-                  type="text"
-                  value={metadata.caseName}
-                  onChange={(e) => setMetadata(m => ({ ...m, caseName: e.target.value }))}
-                  placeholder="e.g., Republic v. John Kamau"
-                  className="w-full px-3 py-2 border border-legal-maroon/20 rounded-lg focus:ring-2 focus:ring-legal-maroon focus:border-transparent"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-legal-text mb-1">Court</label>
-                  <select
-                    value={metadata.court}
-                    onChange={(e) => setMetadata(m => ({ ...m, court: e.target.value }))}
-                    className="w-full px-3 py-2 border border-legal-maroon/20 rounded-lg focus:ring-2 focus:ring-legal-maroon focus:border-transparent"
-                  >
-                    <option value="">Select Court</option>
-                    {COURTS.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-legal-text mb-1">Year</label>
-                  <input
-                    type="text"
-                    value={metadata.year}
-                    onChange={(e) => setMetadata(m => ({ ...m, year: e.target.value }))}
-                    placeholder="2026"
-                    className="w-full px-3 py-2 border border-legal-maroon/20 rounded-lg focus:ring-2 focus:ring-legal-maroon focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-legal-text mb-1">Legal Area</label>
-                  <select
-                    value={metadata.legalArea}
-                    onChange={(e) => setMetadata(m => ({ ...m, legalArea: e.target.value }))}
-                    className="w-full px-3 py-2 border border-legal-maroon/20 rounded-lg focus:ring-2 focus:ring-legal-maroon focus:border-transparent"
-                  >
-                    <option value="">Select Area</option>
-                    {LEGAL_AREAS.map(a => <option key={a} value={a}>{a}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-legal-text mb-1">Citation (Optional)</label>
-                  <input
-                    type="text"
-                    value={metadata.citation}
-                    onChange={(e) => setMetadata(m => ({ ...m, citation: e.target.value }))}
-                    placeholder="[2026] eKLR 1234"
-                    className="w-full px-3 py-2 border border-legal-maroon/20 rounded-lg focus:ring-2 focus:ring-legal-maroon focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3 pt-4">
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMetadataForm(false);
-                      setCurrentFile(null);
-                    }}
-                    className="flex-1 px-4 py-2.5 border border-legal-maroon/20 text-legal-text-muted rounded-lg hover:bg-legal-maroon-light transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2.5 btn-legal rounded-lg"
-                  >
-                    Upload & Index
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!currentFile) return;
-                    setShowMetadataForm(false);
-                    setIsUploading(true);
-                    const emptyMeta = { caseName: '', court: '', year: new Date().getFullYear().toString(), legalArea: '', citation: '' };
-                    await uploadFile(currentFile, emptyMeta);
-                    setIsUploading(false);
-                    setCurrentFile(null);
-                    setMetadata(emptyMeta);
-                  }}
-                  className="text-sm text-legal-text-muted hover:text-legal-maroon transition-colors"
-                >
-                  Skip metadata and upload
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Upload Area */}
-      <div className="legal-card p-6">
-        <div
-          {...getRootProps()}
-          className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all ${
-            isDragActive
-              ? 'border-legal-maroon bg-legal-maroon-light'
-              : 'border-legal-maroon/30 hover:border-legal-maroon hover:bg-legal-maroon-light/50'
-          } ${isUploading || showMetadataForm ? 'opacity-50 cursor-not-allowed' : ''}`}
-        >
-          <input {...getInputProps()} />
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-legal-maroon-light flex items-center justify-center">
-            <Upload className="w-8 h-8 text-legal-maroon" />
-          </div>
-          <h3 className="text-lg font-serif font-semibold text-legal-text mb-2">
-            {isDragActive ? 'Drop judgment here' : 'Upload Legal Documents'}
-          </h3>
-          <p className="text-legal-text-muted mb-4">
-            Drag and drop judgments, rulings, or statutes here
-          </p>
-          <p className="text-sm text-legal-text-muted">
-            Supports PDF, TXT, DOC, DOCX (max 10MB each)
-          </p>
-        </div>
-      </div>
+      {/* Drag-and-drop + metadata modal removed by request */}
 
       {/* Documents List */}
       <div className="legal-card">
@@ -423,9 +282,9 @@ const Uploads: React.FC = () => {
           <Gavel className="w-5 h-5 text-legal-gold" />
           <div>
             <h2 className="text-lg font-serif font-semibold text-legal-text">
-              Indexed Documents
+              Recently Indexed Files
             </h2>
-            <p className="text-sm text-legal-text-muted">Indexed documents</p>
+            <p className="text-sm text-legal-text-muted">Latest indexed documents</p>
           </div>
         </div>
 
@@ -434,15 +293,15 @@ const Uploads: React.FC = () => {
             <div className="w-10 h-10 border-2 border-legal-maroon border-t-transparent rounded-full animate-spin mx-auto mb-4" />
             <p className="text-legal-text-muted">Loading documents...</p>
           </div>
-        ) : documents.length === 0 ? (
+        ) : recentFiles.length === 0 ? (
           <div className="p-12 text-center">
             <FileText className="w-16 h-16 text-legal-maroon/30 mx-auto mb-4" />
-            <p className="text-legal-text font-medium">No documents uploaded yet</p>
-            <p className="text-sm text-legal-text-muted">Upload your first judgment to get started</p>
+            <p className="text-legal-text font-medium">No indexed documents yet</p>
+            <p className="text-sm text-legal-text-muted">Upload documents to begin indexing</p>
           </div>
         ) : (
           <div className="divide-y divide-legal-maroon/10">
-            {documents.map((doc) => (
+            {recentFiles.map((doc) => (
               <div key={doc.id} className="p-6 hover:bg-legal-maroon-light/30 transition-colors">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start space-x-4 flex-1 min-w-0">
@@ -479,24 +338,15 @@ const Uploads: React.FC = () => {
                       <div className="flex items-center space-x-3 text-xs text-legal-text-muted mt-2">
                         <span>{formatFileSize(doc.size)}</span>
                         <span>•</span>
-                        <span>{doc.uploadedAt.toLocaleDateString()}</span>
+                        <span>{(doc.indexedAt || doc.uploadedAt).toLocaleDateString()}</span>
                       </div>
                     </div>
                   </div>
 
                   <div className="flex items-center space-x-4 flex-shrink-0">
                     <div className="flex items-center space-x-2">
-                      {getStatusIcon(doc.status)}
-                      <span className={`text-sm font-medium ${
-                        doc.status === 'indexed' ? 'text-legal-maroon' :
-                        doc.status === 'uploaded' ? 'text-legal-gold-dark' :
-                        doc.status === 'error' ? 'text-red-600' :
-                        'text-legal-gold-dark'
-                      }`}>
-                        {                        doc.status === 'indexed' ? 'Indexed' :
-                         doc.status === 'uploaded' ? 'Uploaded' :
-                         doc.status === 'error' ? 'Error' : 'Processing...'}
-                      </span>
+                      {getStatusIcon('indexed')}
+                      <span className="text-sm font-medium text-legal-maroon">Indexed</span>
                     </div>
 
                     <div className="flex items-center space-x-1">

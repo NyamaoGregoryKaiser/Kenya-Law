@@ -144,6 +144,7 @@ class DocumentItem(BaseModel):
 	size: int
 	uploaded_at: str
 	indexed: bool = False
+	indexed_at: Optional[str] = None
 
 class DocumentListResponse(BaseModel):
 	documents: List[DocumentItem]
@@ -341,13 +342,16 @@ async def list_documents(
 				try:
 					stat = os.stat(path)
 					# Last-known index status (updated on upload/delete). If missing, default False.
-					is_indexed = bool(status_map.get(name, {}).get("indexed", False)) if isinstance(status_map.get(name), dict) else bool(status_map.get(name, False))
+					val = status_map.get(name)
+					is_indexed = bool(val.get("indexed", False)) if isinstance(val, dict) else bool(val)
+					indexed_at = (val.get("updated_at") if isinstance(val, dict) and is_indexed else None)
 					
 					documents.append(DocumentItem(
 						filename=name,
 						size=stat.st_size,
 						uploaded_at=datetime.fromtimestamp(stat.st_mtime).isoformat(),
-						indexed=is_indexed
+						indexed=is_indexed,
+						indexed_at=indexed_at
 					))
 				except Exception as e:
 					logging.error(f"Error processing file {name}: {e}", exc_info=True)
