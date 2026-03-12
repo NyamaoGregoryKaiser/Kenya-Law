@@ -18,6 +18,10 @@ except ImportError:
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredWordDocumentLoader
 from qdrant_client import QdrantClient
+try:
+	from qdrant_client.models import VectorParams, Distance
+except ImportError:
+	from qdrant_client.http.models import VectorParams, Distance
 from langchain_community.vectorstores import Qdrant
 from langchain_community.chat_models import ChatOllama
 from langchain_community.embeddings import OllamaEmbeddings
@@ -99,6 +103,21 @@ class PatriotAIRAGSystem:
 			collection_name = os.getenv("QDRANT_COLLECTION", "kenyalaw_cases")
 
 			client = QdrantClient(host=qdrant_host, port=qdrant_port)
+
+			# Ensure collection exists (Qdrant does not auto-create on first write)
+			try:
+				if not client.collection_exists(collection_name):
+					# Get embedding dimension from model (e.g. nomic-embed-text -> 768)
+					dim = len(self.embeddings.embed_query("x"))
+					client.create_collection(
+						collection_name=collection_name,
+						vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+					)
+					logger.info(f"Created Qdrant collection {collection_name} with dimension {dim}")
+				else:
+					logger.info(f"Qdrant collection {collection_name} already exists")
+			except Exception as e:
+				logger.warning(f"Could not ensure Qdrant collection {collection_name}: {e}")
 
 			self.vectorstore = Qdrant(
 				client=client,
