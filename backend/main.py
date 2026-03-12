@@ -4,6 +4,7 @@ A specialized defense intelligence platform for Kenya's defense sector
 """
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
@@ -468,6 +469,36 @@ async def delete_document(filename: str, current_user: dict = Depends(get_curren
 	except Exception as e:
 		logging.error(f"Failed to delete document {filename}: {e}", exc_info=True)
 		raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/documents/{filename}/download")
+async def download_document(filename: str, current_user: dict = Depends(get_current_user)):
+	"""Download a document file by filename."""
+	try:
+		from urllib.parse import unquote
+		decoded_filename = unquote(filename)
+		upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
+		file_path = os.path.join(upload_dir, decoded_filename)
+
+		abs_file_path = os.path.abspath(file_path)
+		abs_upload_dir = os.path.abspath(upload_dir)
+		if not abs_file_path.startswith(abs_upload_dir):
+			logging.error(f"Security check failed for download: {abs_file_path} not in {abs_upload_dir}")
+			raise HTTPException(status_code=400, detail="Invalid filename")
+
+		if not os.path.exists(abs_file_path) or not os.path.isfile(abs_file_path):
+			raise HTTPException(status_code=404, detail="Document not found")
+
+		return FileResponse(
+			abs_file_path,
+			filename=decoded_filename,
+			media_type="application/octet-stream"
+		)
+	except HTTPException:
+		raise
+	except Exception as e:
+		logging.error(f"Failed to download document {filename}: {e}", exc_info=True)
+		raise HTTPException(status_code=500, detail="Failed to download document")
 
 @app.post("/api/upload", response_model=DocumentUploadResponse)
 async def upload_document(

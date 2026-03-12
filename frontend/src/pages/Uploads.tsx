@@ -195,6 +195,25 @@ const Uploads: React.FC = () => {
     }
   };
 
+  const viewDocument = (doc: UploadedDocument) => {
+    // Open the backend download URL in a new tab; browser will preview if possible
+    const encoded = encodeURIComponent(doc.filename);
+    const url = `${API_BASE.replace(/\/+$/, '')}/documents/${encoded}/download`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const downloadDocument = (doc: UploadedDocument) => {
+    const encoded = encodeURIComponent(doc.filename);
+    const url = `${API_BASE.replace(/\/+$/, '')}/documents/${encoded}/download`;
+    // Creating an anchor ensures "Save as" in some browsers
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = doc.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -351,14 +370,14 @@ const Uploads: React.FC = () => {
 
                     <div className="flex items-center space-x-1">
                       <button
-                        onClick={() => {/* View document */}}
+                        onClick={() => viewDocument(doc)}
                         className="p-2 text-legal-text-muted hover:text-legal-maroon transition-colors rounded-lg hover:bg-legal-maroon-light"
                         title="View document"
                       >
                         <Eye className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => {/* Download document */}}
+                        onClick={() => downloadDocument(doc)}
                         className="p-2 text-legal-text-muted hover:text-legal-gold-dark transition-colors rounded-lg hover:bg-legal-gold-light"
                         title="Download document"
                       >
