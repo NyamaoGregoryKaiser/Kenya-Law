@@ -377,10 +377,20 @@ class PatriotAIRAGSystem:
 		"""
 		t0 = time.time()
 		try:
-			# ---- Retrieval ----
+			# ---- Retrieval (first pass, narrow) ----
 			retrieval_start = time.time()
-			relevant_docs = self.search_documents(query)
-			logger.info(f"retrieval: {len(relevant_docs)} chunks in {time.time() - retrieval_start:.2f}s")
+			relevant_docs = self.search_documents(query, k=6)
+			logger.info(f"retrieval pass1: {len(relevant_docs)} chunks in {time.time() - retrieval_start:.2f}s")
+
+			# If retrieval is very weak, try a broader second pass before giving up
+			if len(relevant_docs) < 2:
+				retrieval2_start = time.time()
+				broader_docs = self.search_documents(query, k=15)
+				logger.info(f"retrieval pass2: {len(broader_docs)} chunks in {time.time() - retrieval2_start:.2f}s")
+				# Prefer second-pass results only if they add something
+				if len(broader_docs) > len(relevant_docs):
+					relevant_docs = broader_docs
+
 			# Ensure header chunks (case caption, parties) are included when any chunk from a doc is retrieved.
 			header_start = time.time()
 			relevant_docs = self._ensure_header_chunks(relevant_docs)
@@ -419,14 +429,14 @@ class PatriotAIRAGSystem:
 
 			if self.llm:
 				prompt = (
-					"You are Kenya Law AI. You must answer ONLY using the text in the Context below. "
-					"Do not use any other knowledge or information from outside the Context. "
-					"If the Context does not contain enough information to answer the question, say: "
+					"You are a Kenyan legal research assistant. Use ONLY the passages in the Context below to answer the question. "
+					"Do not use any external knowledge or web search. "
+					"If the Context clearly contains relevant information (e.g. parties, case number, issues, holdings), you MUST use it to answer, "
+					"and you may logically connect and explain events as long as you do not invent facts that are not supported by the text. "
+					"If the Context truly contains no discussion relevant to the question, say: "
 					"'This information was not found in your uploaded documents.' "
-					"Do NOT state that information is absent, missing, or 'not explicitly named' if it clearly appears in the Context—e.g. party names (appellants, respondent), "
-					"case numbers, or citations. If the Context lists parties (e.g. '1ST APPELLANT', '2ND APPELLANT', names before 'APPELLANT' or 'RESPONDENT'), "
-					"you MUST list them in your answer. If the Context mentions a case number or citation, explain what it refers to from the Context. "
-					"Quote or paraphrase only from the Context. Do not add facts or principles not present in the Context.\n\n"
+					"Do NOT say that information is 'not explicitly named' if it actually appears in the Context (for example, party names before 'APPELLANT' or 'RESPONDENT'). "
+					"Quote or paraphrase only from the Context. Do not add legal principles, cases, or facts that are not present in the Context.\n\n"
 					f"Question: {query}\n\nContext:\n{context}\n\n"
 					"Answer based strictly on the Context above:"
 				)

@@ -340,12 +340,6 @@ const AskAI: React.FC = () => {
                           )}
                         </div>
                       </div>
-                      {typeof message.confidence === 'number' && (
-                        <span className="ai-badge">
-                          <Scale className="w-3 h-3" />
-                          Confidence {Math.round(message.confidence * 100)}%
-                        </span>
-                      )}
                     </div>
 
                     <ReactMarkdown
