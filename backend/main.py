@@ -13,6 +13,7 @@ import logging
 import time
 from datetime import datetime
 import shutil
+import json
 
 # Load environment from .env files
 try:
@@ -56,6 +57,40 @@ async def log_requests(request, call_next):
 logging.info("Answer model for /api/query: local Ollama only (no Gemini/Google). See rag_system logs for model name.")
 logging.info(f"GOOGLE_API_KEY present: {bool(os.getenv('GOOGLE_API_KEY'))} (unused for answers)")
 logging.info(f"SERPAPI_API_KEY present: {bool(os.getenv('SERPAPI_API_KEY'))}")
+
+
+def _index_status_path(upload_dir: str) -> str:
+	return os.path.join(upload_dir, ".index_status.json")
+
+
+def _load_index_status(upload_dir: str) -> dict:
+	"""Load last-known indexing status for filenames (fast, avoids Qdrant calls on /api/documents)."""
+	path = _index_status_path(upload_dir)
+	try:
+		if not os.path.exists(path):
+			return {}
+		with open(path, "r", encoding="utf-8") as f:
+			data = json.load(f)
+		return data if isinstance(data, dict) else {}
+	except Exception as e:
+		logging.warning(f"Failed to read index status file {path}: {e}")
+		return {}
+
+
+def _save_index_status(upload_dir: str, data: dict) -> None:
+	path = _index_status_path(upload_dir)
+	tmp = f"{path}.tmp"
+	try:
+		with open(tmp, "w", encoding="utf-8") as f:
+			json.dump(data, f)
+		os.replace(tmp, path)
+	except Exception as e:
+		logging.warning(f"Failed to write index status file {path}: {e}")
+		try:
+			if os.path.exists(tmp):
+				os.remove(tmp)
+		except Exception:
+			pass
 
 # Add CORS middleware
 app.add_middleware(
@@ -270,22 +305,20 @@ async def list_documents(current_user: dict = Depends(get_current_user)):
 			return DocumentListResponse(documents=[])
 		
 		all_files = os.listdir(upload_dir)
-		logging.info(f"Found {len(all_files)} items in upload directory: {all_files}")
+		# Avoid per-file Qdrant checks here (can be slow with many docs). Use last-known status file.
+		status_map = _load_index_status(upload_dir)
+		logging.info(f"Found {len(all_files)} items in upload directory")
 		
 		for name in all_files:
+			# Skip our internal status file
+			if name == os.path.basename(_index_status_path(upload_dir)):
+				continue
 			path = os.path.join(upload_dir, name)
 			if os.path.isfile(path):
 				try:
 					stat = os.stat(path)
-					logging.info(f"Processing file {name}: size={stat.st_size}")
-					# Check if document is indexed in the vector store
-					# Wrap in try-except to prevent index check from breaking listing
-					try:
-						is_indexed = rag_system.is_document_indexed(name)
-						logging.info(f"Document {name} indexed status: {is_indexed}")
-					except Exception as idx_error:
-						logging.warning(f"Could not check index status for {name}: {idx_error}")
-						is_indexed = False
+					# Last-known index status (updated on upload/delete). If missing, default False.
+					is_indexed = bool(status_map.get(name, {}).get("indexed", False)) if isinstance(status_map.get(name), dict) else bool(status_map.get(name, False))
 					
 					documents.append(DocumentItem(
 						filename=name,
@@ -293,7 +326,6 @@ async def list_documents(current_user: dict = Depends(get_current_user)):
 						uploaded_at=datetime.fromtimestamp(stat.st_mtime).isoformat(),
 						indexed=is_indexed
 					))
-					logging.info(f"Added document {name} to list (total: {len(documents)})")
 				except Exception as e:
 					logging.error(f"Error processing file {name}: {e}", exc_info=True)
 					continue
@@ -353,6 +385,16 @@ async def delete_document(filename: str, current_user: dict = Depends(get_curren
 				raise HTTPException(status_code=500, detail="File deletion failed")
 			
 			logging.info(f"Deletion verified: {decoded_filename} no longer exists")
+
+			# Update local index status map (fast)
+			try:
+				status_map = _load_index_status(upload_dir)
+				if decoded_filename in status_map:
+					status_map.pop(decoded_filename, None)
+					_save_index_status(upload_dir, status_map)
+			except Exception as e:
+				logging.warning(f"Failed to update index status for deleted doc {decoded_filename}: {e}")
+
 			return {"status": "deleted", "filename": decoded_filename}
 		except PermissionError as perm_error:
 			logging.error(f"Permission denied deleting {decoded_filename}: {perm_error}")
@@ -416,6 +458,18 @@ async def upload_document(
 		
 		indexed, index_message = rag_system.index_document(file_path, metadata)
 		document_id = f"doc_{datetime.now().timestamp()}"
+
+		# Persist last-known indexing status locally so /api/documents is fast even with many files
+		try:
+			status_map = _load_index_status(upload_dir)
+			status_map[file.filename] = {
+				"indexed": bool(indexed),
+				"index_message": index_message,
+				"updated_at": datetime.now().isoformat(),
+			}
+			_save_index_status(upload_dir, status_map)
+		except Exception as e:
+			logging.warning(f"Failed to persist index status for {file.filename}: {e}")
 		
 		return DocumentUploadResponse(
 			document_id=document_id,
