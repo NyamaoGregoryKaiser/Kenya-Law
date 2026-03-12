@@ -147,6 +147,8 @@ class DocumentItem(BaseModel):
 
 class DocumentListResponse(BaseModel):
 	documents: List[DocumentItem]
+	total_uploaded: int = 0
+	total_indexed: int = 0
 
 class MapEvent(BaseModel):
 	id: str
@@ -309,17 +311,31 @@ async def list_documents(
 	try:
 		if not os.path.isdir(upload_dir):
 			logging.warning(f"Uploads directory does not exist: {upload_dir}")
-			return DocumentListResponse(documents=[])
+			return DocumentListResponse(documents=[], total_uploaded=0, total_indexed=0)
 		
 		all_files = os.listdir(upload_dir)
 		# Avoid per-file Qdrant checks here (can be slow with many docs). Use last-known status file.
 		status_map = _load_index_status(upload_dir)
 		logging.info(f"Found {len(all_files)} items in upload directory")
-		
+		status_filename = os.path.basename(_index_status_path(upload_dir))
+
+		file_names: List[str] = []
 		for name in all_files:
-			# Skip our internal status file
-			if name == os.path.basename(_index_status_path(upload_dir)):
+			if name == status_filename:
 				continue
+			path = os.path.join(upload_dir, name)
+			if os.path.isfile(path):
+				file_names.append(name)
+
+		total_uploaded = len(file_names)
+		total_indexed = 0
+		for name in file_names:
+			val = status_map.get(name)
+			is_indexed = bool(val.get("indexed", False)) if isinstance(val, dict) else bool(val)
+			if is_indexed:
+				total_indexed += 1
+		
+		for name in file_names:
 			path = os.path.join(upload_dir, name)
 			if os.path.isfile(path):
 				try:
@@ -344,7 +360,7 @@ async def list_documents(
 		logging.info(f"Listed {len(documents)} documents from {upload_dir}")
 	except Exception as e:
 		logging.error(f"Error listing documents: {e}", exc_info=True)
-	return DocumentListResponse(documents=documents)
+	return DocumentListResponse(documents=documents, total_uploaded=total_uploaded, total_indexed=total_indexed)
 
 @app.delete("/api/documents/{filename}")
 async def delete_document(filename: str, current_user: dict = Depends(get_current_user)):

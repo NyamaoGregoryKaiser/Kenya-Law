@@ -51,6 +51,8 @@ const Uploads: React.FC = () => {
   const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [showAllDocuments, setShowAllDocuments] = useState(false);
+  const [totalIndexed, setTotalIndexed] = useState(0);
+  const [totalUploaded, setTotalUploaded] = useState(0);
   const [metadata, setMetadata] = useState({
     caseName: '',
     court: '',
@@ -65,6 +67,8 @@ const Uploads: React.FC = () => {
       const limitParam = showAll ? '0' : '50';
       const res = await axios.get(`${API_BASE}/documents?limit=${limitParam}`);
       const documents = res.data?.documents || [];
+      setTotalIndexed(Number(res.data?.total_indexed ?? 0));
+      setTotalUploaded(Number(res.data?.total_uploaded ?? 0));
       console.log(`Fetched ${documents.length} documents from API`);
       const list = documents.map((d: { filename: string; size: number; uploaded_at: string; indexed: boolean }) => ({
         id: d.filename,
@@ -267,7 +271,8 @@ const Uploads: React.FC = () => {
           </div>
         </div>
         <div className="text-sm text-legal-text-muted bg-legal-gold-light px-4 py-2 rounded-lg border border-legal-gold/30">
-          <span className="font-semibold text-legal-gold-dark">{documents.length}</span> documents uploaded
+          <span className="font-semibold text-legal-gold-dark">{totalIndexed}</span> indexed documents
+          <span className="text-legal-text-muted"> (of {totalUploaded} uploaded)</span>
         </div>
       </div>
 
