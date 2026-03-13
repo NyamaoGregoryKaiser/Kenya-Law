@@ -42,9 +42,6 @@ MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "6000"))
 HEADER_MAX_CHARS = int(os.getenv("RAG_HEADER_MAX_CHARS", "1500"))
 JUDGMENT_MARKERS = ("JUDGMENT OF THE COURT", "JUDGMENT\n", "\n\nJUDGMENT ")
 
-# Document-level master index (per-judgment synopsis) collection name
-DOC_INDEX_COLLECTION = os.getenv("DOC_INDEX_COLLECTION", "kenyalaw_docs_master")
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rag_system")
 
@@ -84,7 +81,6 @@ class PatriotAIRAGSystem:
 		self.llm = None
 		self._qdrant_client = None
 		self._qdrant_collection = None
-		self._doc_index_collection = DOC_INDEX_COLLECTION
 		self._initialize_llm()
 		self._initialize_vectorstore()
 	
@@ -119,7 +115,7 @@ class PatriotAIRAGSystem:
 
 			client = QdrantClient(host=qdrant_host, port=qdrant_port)
 
-			# Ensure main chunk-level collection exists (Qdrant does not auto-create on first write)
+			# Ensure collection exists (Qdrant does not auto-create on first write)
 			try:
 				if not client.collection_exists(collection_name):
 					# Get embedding dimension from model (e.g. nomic-embed-text -> 768)
@@ -133,20 +129,6 @@ class PatriotAIRAGSystem:
 					logger.info(f"Qdrant collection {collection_name} already exists")
 			except Exception as e:
 				logger.warning(f"Could not ensure Qdrant collection {collection_name}: {e}")
-
-			# Ensure document-level master index collection exists
-			try:
-				if not client.collection_exists(self._doc_index_collection):
-					dim = len(self.embeddings.embed_query("x"))
-					client.create_collection(
-						collection_name=self._doc_index_collection,
-						vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
-					)
-					logger.info(f"Created Qdrant doc index collection {self._doc_index_collection} with dimension {dim}")
-				else:
-					logger.info(f"Qdrant doc index collection {self._doc_index_collection} already exists")
-			except Exception as e:
-				logger.warning(f"Could not ensure Qdrant doc index collection {self._doc_index_collection}: {e}")
 
 			self.vectorstore = Qdrant(
 				client=client,
@@ -231,18 +213,7 @@ class PatriotAIRAGSystem:
 			documents = self._load_document(file_path)
 			if not documents:
 				return False, "Could not load document (install 'unstructured' for DOC/DOCX, or check file format)."
-
-			# Build structure-aware chunks
 			split_docs = self._split_documents(documents, source_path=file_path)
-
-			# Build a short synopsis for document-level master index (first page/header + a bit more)
-			try:
-				full_text = "\n\n".join(d.page_content for d in documents)
-				synopsis_text = full_text[:2000]
-				if synopsis_text:
-					self._index_document_synopsis(file_path, synopsis_text, metadata or {})
-			except Exception as e:
-				logger.warning(f"Failed to build/index synopsis for {file_path}: {e}")
 			if metadata:
 				for d in split_docs:
 					d.metadata.update(metadata)
@@ -320,16 +291,11 @@ class PatriotAIRAGSystem:
 			# Return False but don't raise - file deletion should still proceed
 			return False
 	
-	def search_documents(self, query: str, k: int = 6, restrict_filenames: List[str] = None):
+	def search_documents(self, query: str, k: int = 6):
 		try:
 			if not self.vectorstore:
 				logger.warning("Vector store not initialized")
 				return []
-			# If we have a document whitelist, search a bit wider then filter
-			if restrict_filenames:
-				raw = self.vectorstore.similarity_search(query, k=k * 3)
-				filtered = [d for d in raw if (d.metadata.get("filename") or "") in restrict_filenames]
-				return filtered[:k]
 			return self.vectorstore.similarity_search(query, k=k)
 		except Exception as e:
 			logger.error(f"Failed to search documents: {e}")
@@ -476,65 +442,6 @@ class PatriotAIRAGSystem:
 			logger.warning(f"Failed to fetch all chunks for filename {filename}: {e}")
 			return []
 
-	def _index_document_synopsis(self, file_path: str, synopsis_text: str, metadata: Dict[str, Any]):
-		"""
-		Index a single vector per document (synopsis) into a master collection so that
-		we can quickly choose the most relevant judgments per query.
-		"""
-		if not self._qdrant_client or not self._doc_index_collection:
-			return
-		try:
-			vector = self.embeddings.embed_query(synopsis_text)
-			filename = os.path.basename(file_path)
-			payload = {
-				"filename": filename,
-				"synopsis": synopsis_text,
-			}
-			# Add selected metadata fields if present
-			for key in ["case_name", "court", "year", "citation", "legal_area"]:
-				if key in metadata:
-					payload[key] = metadata[key]
-
-			self._qdrant_client.upsert(
-				collection_name=self._doc_index_collection,
-				points=[
-					{
-						"id": filename,
-						"vector": vector,
-						"payload": payload,
-					}
-				],
-			)
-			logger.info(f"Indexed document synopsis for {filename} into {self._doc_index_collection}")
-		except Exception as e:
-			logger.warning(f"Failed to index document synopsis for {file_path}: {e}")
-
-	def _select_top_documents(self, query: str, top_n: int = 5) -> List[str]:
-		"""
-		Select top-N document filenames from the master index for a given query.
-		"""
-		if not self._qdrant_client or not self._doc_index_collection:
-			return []
-		try:
-			query_vec = self.embeddings.embed_query(query)
-			results = self._qdrant_client.search(
-				collection_name=self._doc_index_collection,
-				query_vector=query_vec,
-				with_payload=True,
-				limit=top_n,
-			)
-			filenames: List[str] = []
-			for r in results:
-				pl = r.payload or {}
-				fname = pl.get("filename")
-				if fname:
-					filenames.append(fname)
-			logger.info(f"Doc index selected {len(filenames)} candidate documents for query")
-			return filenames
-		except Exception as e:
-			logger.warning(f"Failed to select top documents from master index: {e}")
-			return []
-
 	def web_search(self, query: str, num_results: int = 0):
 		# Web search disabled; answers are based only on uploaded documents.
 		return []
@@ -568,18 +475,15 @@ class PatriotAIRAGSystem:
 		"""
 		t0 = time.time()
 		try:
-			# ---- Stage 1: select top candidate documents from master index ----
-			doc_candidates = self._select_top_documents(query, top_n=5)
-
-			# ---- Stage 2: chunk-level retrieval (first pass, narrow) ----
+			# ---- Retrieval (first pass, narrow) ----
 			retrieval_start = time.time()
-			relevant_docs = self.search_documents(query, k=10, restrict_filenames=doc_candidates or None)
+			relevant_docs = self.search_documents(query, k=10)
 			logger.info(f"retrieval pass1: {len(relevant_docs)} chunks in {time.time() - retrieval_start:.2f}s")
 
 			# If retrieval is very weak, try a broader second pass before giving up
 			if len(relevant_docs) < 3:
 				retrieval2_start = time.time()
-				broader_docs = self.search_documents(query, k=40, restrict_filenames=doc_candidates or None)
+				broader_docs = self.search_documents(query, k=40)
 				logger.info(f"retrieval pass2: {len(broader_docs)} chunks in {time.time() - retrieval2_start:.2f}s")
 				# Prefer second-pass results only if they add something
 				if len(broader_docs) > len(relevant_docs):

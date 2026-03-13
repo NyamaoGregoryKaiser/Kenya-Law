@@ -28,6 +28,8 @@ except Exception as _e:
 # Import RAG system
 from rag_system import rag_system
 from prompts_store import filter_prompts_for_role, find_prompt_by_id, upsert_prompt, soft_delete_prompt
+from legal_metadata import extract_legal_metadata, build_master_text
+from document_index import document_indexer
 
 # Import Open WebUI components
 try:
@@ -550,6 +552,20 @@ async def upload_document(
 		
 		indexed, index_message = rag_system.index_document(file_path, metadata)
 		document_id = f"doc_{datetime.now().timestamp()}"
+
+		# --- Phase 1: upsert document-level synopsis into kenyalaw_documents ---
+		try:
+			# Reuse rag_system's loader to get clean text for metadata/synopsis
+			docs = rag_system._load_document(file_path)
+			full_text = "\n\n".join(d.page_content for d in docs) if docs else ""
+			legal_meta = extract_legal_metadata(full_text, file.filename)
+			master_text = build_master_text(legal_meta, full_text)
+			# Merge upload metadata into legal_meta for richer payload
+			payload = {**legal_meta, **metadata, "master_text": master_text}
+			doc_id = legal_meta.get("doc_id", document_id)
+			document_indexer.upsert_document(doc_id=doc_id, master_text=master_text, payload=payload)
+		except Exception as e:
+			logging.warning(f"Document-level indexing (kenyalaw_documents) failed for {file.filename}: {e}")
 
 		# Persist last-known indexing status locally so /api/documents is fast even with many files
 		try:
