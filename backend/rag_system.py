@@ -384,6 +384,41 @@ class PatriotAIRAGSystem:
 		# Prepend header chunks so they appear before body chunks in context.
 		return header_docs + relevant_docs
 	
+	def _guess_filename_from_case_hint(self, case_hint: str) -> str | None:
+		"""Best-effort guess of a filename corresponding to a case hint string, using semantic search."""
+		try:
+			if not self.vectorstore or not case_hint:
+				return None
+			# Search using the case hint alone to surface likely matching files
+			candidates = self.vectorstore.similarity_search(case_hint, k=20)
+			if not candidates:
+				return None
+			norm_hint = re.sub(r"\s+", "", case_hint).lower()
+			digits = re.findall(r"\d+", case_hint)
+			best_fname = None
+			best_score = None
+			for doc in candidates:
+				fname = (doc.metadata.get("filename") or "").lower()
+				if not fname:
+					continue
+				fname_norm = re.sub(r"\s+", "", fname)
+				score = 0
+				# strong boost for near-exact text match in filename
+				if norm_hint and norm_hint in fname_norm:
+					score -= 3
+				# boost when all number groups from the case hint appear in the filename
+				if digits and all(d in fname for d in digits):
+					score -= 2
+				elif digits and any(d in fname for d in digits):
+					score -= 1
+				if best_score is None or score < best_score:
+					best_score = score
+					best_fname = fname
+			return best_fname
+		except Exception as e:
+			logger.debug(f"Failed to guess filename from case_hint '{case_hint}': {e}")
+			return None
+	
 	def _fetch_all_chunks_for_filename(self, filename: str) -> List[Document]:
 		"""
 		Fetch additional chunks for a given filename directly from Qdrant, so that
