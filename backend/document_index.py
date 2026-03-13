@@ -1,6 +1,7 @@
 import os
 import logging
 from typing import Dict
+from uuid import uuid4
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
@@ -45,17 +46,18 @@ class DocumentIndexer:
 		try:
 			emb = self._get_embeddings()
 			vector = emb.embed_query(master_text)
+			point_id = str(uuid4())
 			self.client.upsert(
 				collection_name=self.collection_name,
 				points=[
 					qmodels.PointStruct(
-						id=doc_id,
+						id=point_id,
 						vector=vector,
 						payload=payload,
 					)
 				],
 			)
-			logger.info(f"Upserted document {doc_id} into {self.collection_name}")
+			logger.info(f"Upserted document {doc_id} into {self.collection_name} as point_id={point_id}")
 		except Exception as e:
 			logger.error(f"Failed to upsert document {doc_id} into {self.collection_name}: {e}", exc_info=True)
 
