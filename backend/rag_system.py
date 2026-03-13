@@ -315,23 +315,23 @@ class PatriotAIRAGSystem:
 		try:
 			q = " ".join((query or "").upper().split())
 
-			# Generic "<TYPE> APPEAL NO. ... 2017"
-			m = re.search(r"(CIVIL|CRIMINAL)\s+APPEAL\s+NO\.?\s+[^\n]+?\d{4}", q)
+			# Generic "<TYPE> APPEAL NO./NOS. ... 2017"
+			m = re.search(r"(CIVIL|CRIMINAL)\s+APPEAL\s+NO[S]?\.?\s+[^\n]+?\d{4}", q)
 			if m:
 				return m.group(0)
 
-			# "<TYPE> APPLICATION NO. E073 OF 2023"
-			m = re.search(r"(CIVIL|CRIMINAL)\s+APPLICATION\s+NO\.?\s+[^\n]+?\d{4}", q)
+			# "<TYPE> APPLICATION NO./NOS. E073 OF 2023"
+			m = re.search(r"(CIVIL|CRIMINAL)\s+APPLICATION\s+NO[S]?\.?\s+[^\n]+?\d{4}", q)
 			if m:
 				return m.group(0)
 
-			# Registry-prefixed patterns: "KISUMU CIV APP NO 39 OF 2017"
-			m = re.search(r"(KISUMU|MOMBASA|NAIROBI|MALINDI)\s+[A-Z]+\s+APP(?:EAL|\.?)\s+NO\.?\s+[^\n]+?\d{4}", q)
+			# Registry-prefixed patterns: "KISUMU CIV APP NO/NOS 39 OF 2017"
+			m = re.search(r"(KISUMU|MOMBASA|NAIROBI|MALINDI)\s+[A-Z]+\s+APP(?:EAL|\.?)\s+NO[S]?\.?\s+[^\n]+?\d{4}", q)
 			if m:
 				return m.group(0)
 
-			# Fallback: "<TYPE> APPEAL NO. 39" (no year)
-			m = re.search(r"(CIVIL|CRIMINAL)\s+APPEAL\s+NO\.?\s+\d+", q)
+			# Fallback: "<TYPE> APPEAL NO./NOS. 39" (no year)
+			m = re.search(r"(CIVIL|CRIMINAL)\s+APPEAL\s+NO[S]?\.?\s+\d+", q)
 			if m:
 				return m.group(0)
 
