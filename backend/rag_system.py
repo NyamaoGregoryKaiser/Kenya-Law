@@ -335,10 +335,10 @@ class PatriotAIRAGSystem:
 			if m:
 				return m.group(0)
 
-		return None
-	except Exception as e:
-		logger.debug(f"Failed to extract case hint from query '{query}': {e}")
-		return None
+			return None
+		except Exception as e:
+			logger.debug(f"Failed to extract case hint from query '{query}': {e}")
+			return None
 
 	def _extract_filename_from_query(self, query: str) -> str | None:
 		"""Extract a filename (e.g. '85 & 86.07.doc') from the query when the user refers to a specific document."""
