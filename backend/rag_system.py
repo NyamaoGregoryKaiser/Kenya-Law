@@ -335,11 +335,25 @@ class PatriotAIRAGSystem:
 			if m:
 				return m.group(0)
 
-			return None
+		return None
+	except Exception as e:
+		logger.debug(f"Failed to extract case hint from query '{query}': {e}")
+		return None
+
+	def _extract_filename_from_query(self, query: str) -> str | None:
+		"""Extract a filename (e.g. '85 & 86.07.doc') from the query when the user refers to a specific document."""
+		try:
+			if not query or not query.strip():
+				return None
+			# Match substring ending with .doc, .docx, .pdf, .txt (allow digits, letters, spaces, &, ., -)
+			m = re.search(r"([A-Za-z0-9_\s&.\-()]+\.(?:docx?|pdf|txt))", query, re.IGNORECASE)
+			if not m:
+				return None
+			return m.group(1).strip().strip("'\"").strip()
 		except Exception as e:
-			logger.debug(f"Failed to extract case hint from query '{query}': {e}")
+			logger.debug(f"Failed to extract filename from query: {e}")
 			return None
-	
+
 	def _ensure_header_chunks(self, relevant_docs: List[Document]) -> List[Document]:
 		"""For each document in results, ensure its header chunk (case caption, parties) is included so party names are in context."""
 		if not relevant_docs or not getattr(self, "_qdrant_client", None) or not getattr(self, "_qdrant_collection", None):
@@ -510,13 +524,25 @@ class PatriotAIRAGSystem:
 		"""
 		t0 = time.time()
 		try:
-			# ---- Retrieval (first pass, narrow) ----
-			retrieval_start = time.time()
-			relevant_docs = self.search_documents(query, k=10)
-			logger.info(f"retrieval pass1: {len(relevant_docs)} chunks in {time.time() - retrieval_start:.2f}s")
+			# If the query explicitly mentions a filename (e.g. "85 & 86.07.doc"), fetch that document's chunks first
+			relevant_docs: List[Document] = []
+			used_filename_direct = False
+			filename_in_query = self._extract_filename_from_query(query)
+			if filename_in_query:
+				docs_by_name = self._fetch_all_chunks_for_filename(filename_in_query)
+				if docs_by_name:
+					relevant_docs = docs_by_name
+					used_filename_direct = True
+					logger.info(f"Using {len(relevant_docs)} chunks from filename mentioned in query: {filename_in_query!r}")
 
-			# If retrieval is very weak, try a broader second pass before giving up
-			if len(relevant_docs) < 3:
+			if not relevant_docs:
+				# ---- Retrieval (first pass, narrow) ----
+				retrieval_start = time.time()
+				relevant_docs = self.search_documents(query, k=10)
+				logger.info(f"retrieval pass1: {len(relevant_docs)} chunks in {time.time() - retrieval_start:.2f}s")
+
+			# If retrieval is very weak, try a broader second pass before giving up (only when not filename-directed)
+			if not filename_in_query and len(relevant_docs) < 3:
 				retrieval2_start = time.time()
 				broader_docs = self.search_documents(query, k=40)
 				logger.info(f"retrieval pass2: {len(broader_docs)} chunks in {time.time() - retrieval2_start:.2f}s")
@@ -524,10 +550,10 @@ class PatriotAIRAGSystem:
 				if len(broader_docs) > len(relevant_docs):
 					relevant_docs = broader_docs
 
-			# Bias results towards filenames matching a case hint from the query
+			# Bias results towards filenames matching a case hint (skip when we already used a filename from the query)
 			case_hint = self._extract_case_hint(query)
 			case_filename_for_expansion = None
-			if case_hint and relevant_docs:
+			if not used_filename_direct and case_hint and relevant_docs:
 				norm_hint = re.sub(r"\s+", "", case_hint).lower()
 
 				def _fname_score(doc):
@@ -546,8 +572,15 @@ class PatriotAIRAGSystem:
 				except Exception as e:
 					logger.debug(f"Failed to sort by case_hint '{case_hint}': {e}")
 
+			# If we still don't have a filename candidate, try guessing from case hint
+			if not used_filename_direct and case_hint and not case_filename_for_expansion:
+				guessed = self._guess_filename_from_case_hint(case_hint)
+				if guessed:
+					case_filename_for_expansion = guessed
+					logger.info(f"case_hint '{case_hint}' guessed filename '{guessed}' for expansion")
+
 			# If we have a good filename candidate for this query, pull more chunks for that file
-			if case_filename_for_expansion:
+			if not used_filename_direct and case_filename_for_expansion:
 				additional = self._fetch_all_chunks_for_filename(case_filename_for_expansion)
 				if additional:
 					# Merge, preferring unique (source, chunk_index) combinations
