@@ -1,4 +1,54 @@
-"""
+Your Query
+Summarize the facts in our uploaded judgment 85 & 86.07.doc.
+13:05:25
+Kenya Law AI Response
+
+Tailored for Advocate
+
+Dear Advocate,
+
+I have reviewed the uploaded judgment (85 & 86.07.doc) and summarized the facts as follows:
+
+There are no specific cases or judgments mentioned in this document. The document appears to be a collection of various court proceedings, including consolidated civil applications, appeals, and criminal cases. The cases listed do not appear to be related to each other.
+
+If you would like me to assist you with any specific legal matter or provide guidance on how to proceed with your case, please let me know the relevant details, such as the parties involved, the issues at stake, and the desired outcome. I will do my best to provide a helpful response based on the information provided.
+
+Please note that this document does not contain any relevant information for answering your question.
+
+📚 Sources & Citations
+
+
+CIVIL APP. NAI SUP 12 of 2017.docx
+2 passages ▶
+
+CIVIL APPEAL NO 255 OF 2018 (1).doc
+2 passages ▶
+
+CIVIL APPEAL NO 325 OF 2014 (adverse possession).doc
+2 passages ▶
+
+(G)MSA CRIMINAL APPEAL NO. 67 OF 2020 - Final.docx
+2 passages ▶
+
+CIVIL APPEAL NO 255 OF 2018 .doc
+2 passages ▶
+
+C A 94 of 2018.doc
+2 passages ▶
+
+CIVIL APPEAL NO 12 OF 2018.doc
+2 passages ▶
+
+CIVIL APPEAL NO 130 OF 2017.docx
+2 passages ▶
+
+CIVIL APPEAL NO. E103 OF 2021.docx
+2 passages ▶
+
+CIVIL APPEAL (APPLICATION) NO. E574 OF 2022.docx
+2 passages ▶
+13:05:47
+Role: Advocate"""
 RAG (Retrieval-Augmented Generation) System for PatriotAI Defense Hub
 Integrates document indexing, vector search, and AI-powered responses
 """
@@ -345,11 +395,15 @@ class PatriotAIRAGSystem:
 		try:
 			if not query or not query.strip():
 				return None
-			# Match substring ending with .doc, .docx, .pdf, .txt (allow digits, letters, spaces, &, ., -)
-			m = re.search(r"([A-Za-z0-9_\s&.\-()]+\.(?:docx?|pdf|txt))", query, re.IGNORECASE)
+			# Non-greedy match so we get the shortest run ending with .doc/.docx/.pdf/.txt (avoids
+			# capturing the whole rewritten query like "...audience. Summarize the facts... 85 & 86.07.doc")
+			m = re.search(r"([A-Za-z0-9_\s&.\-()]+?\.(?:docx?|pdf|txt))", query, re.IGNORECASE)
 			if not m:
 				return None
-			return m.group(1).strip().strip("'\"").strip()
+			fname = m.group(1).strip().strip("'\"").strip().rstrip(".")
+			if not fname:
+				return None
+			return fname
 		except Exception as e:
 			logger.debug(f"Failed to extract filename from query: {e}")
 			return None
@@ -435,61 +489,65 @@ class PatriotAIRAGSystem:
 	
 	def _fetch_all_chunks_for_filename(self, filename: str) -> List[Document]:
 		"""
-		Fetch additional chunks for a given filename directly from Qdrant, so that
-		the model sees more of the judgment when a specific case is being asked about.
+		Fetch all chunks for a given filename directly from Qdrant.
+		Tries metadata.filename first, then top-level filename (in case payload is flat).
 		"""
 		if not getattr(self, "_qdrant_client", None) or not getattr(self, "_qdrant_collection", None):
 			return []
 		if Filter is None or FieldCondition is None or MatchValue is None:
 			return []
 
-		try:
-			metadata_key = getattr(self.vectorstore, "metadata_payload_key", "metadata")
-			content_key = getattr(self.vectorstore, "content_payload_key", "page_content")
+		metadata_key = getattr(self.vectorstore, "metadata_payload_key", "metadata")
+		content_key = getattr(self.vectorstore, "content_payload_key", "page_content")
 
-			scroll_filter = Filter(
-				must=[
-					FieldCondition(key=f"{metadata_key}.filename", match=MatchValue(value=filename)),
-				]
-			)
-
+		def _scroll_and_collect(key: str) -> List[Document]:
 			all_docs: List[Document] = []
 			next_offset = None
-			# Cap to avoid pulling an unbounded number of chunks
 			max_chunks = 40
-
-			while True:
-				records, next_offset = self._qdrant_client.scroll(
-					collection_name=self._qdrant_collection,
-					scroll_filter=scroll_filter,
-					limit=10,
-					with_payload=True,
-					with_vectors=False,
-					offset=next_offset,
+			try:
+				scroll_filter = Filter(
+					must=[FieldCondition(key=key, match=MatchValue(value=filename))],
 				)
-				if not records:
-					break
-
-				for point in records:
-					payload = point.payload or {}
-					content = payload.get(content_key) or payload.get("page_content", "")
-					meta = payload.get(metadata_key) or payload
-					if isinstance(meta, dict):
-						meta = dict(meta)
-					else:
-						meta = {}
-					all_docs.append(Document(page_content=content, metadata=meta))
-					if len(all_docs) >= max_chunks:
+				while True:
+					records, next_offset = self._qdrant_client.scroll(
+						collection_name=self._qdrant_collection,
+						scroll_filter=scroll_filter,
+						limit=10,
+						with_payload=True,
+						with_vectors=False,
+						offset=next_offset,
+					)
+					if not records:
 						break
-
-				if not next_offset or len(all_docs) >= max_chunks:
-					break
-
-			logger.info(f"Fetched {len(all_docs)} chunks from Qdrant for filename={filename}")
+					for point in records:
+						payload = point.payload or {}
+						content = payload.get(content_key) or payload.get("page_content", "")
+						meta = payload.get(metadata_key) or payload
+						if isinstance(meta, dict):
+							meta = dict(meta)
+						else:
+							meta = {}
+						# If payload is flat, ensure filename is in metadata for by_document grouping
+						if "filename" not in meta and "filename" in payload:
+							meta = dict(meta, filename=payload["filename"], source=payload.get("source", ""))
+						all_docs.append(Document(page_content=content, metadata=meta))
+						if len(all_docs) >= max_chunks:
+							break
+					if not next_offset or len(all_docs) >= max_chunks:
+						break
+			except Exception as e:
+				logger.debug(f"Scroll with key={key} for filename={filename!r}: {e}")
 			return all_docs
-		except Exception as e:
-			logger.warning(f"Failed to fetch all chunks for filename {filename}: {e}")
-			return []
+
+		# Try nested key first (metadata.filename), then top-level (filename)
+		all_docs = _scroll_and_collect(f"{metadata_key}.filename")
+		if not all_docs:
+			all_docs = _scroll_and_collect("filename")
+		if not all_docs:
+			logger.warning(f"No chunks found in Qdrant for filename {filename!r}; check that document is indexed.")
+		else:
+			logger.info(f"Fetched {len(all_docs)} chunks from Qdrant for filename={filename!r}")
+		return all_docs
 
 	def web_search(self, query: str, num_results: int = 0):
 		# Web search disabled; answers are based only on uploaded documents.
@@ -529,11 +587,14 @@ class PatriotAIRAGSystem:
 			used_filename_direct = False
 			filename_in_query = self._extract_filename_from_query(query)
 			if filename_in_query:
+				logger.info(f"Filename extracted from query: {filename_in_query!r}")
 				docs_by_name = self._fetch_all_chunks_for_filename(filename_in_query)
 				if docs_by_name:
 					relevant_docs = docs_by_name
 					used_filename_direct = True
 					logger.info(f"Using {len(relevant_docs)} chunks from filename mentioned in query: {filename_in_query!r}")
+				else:
+					logger.warning(f"No chunks found for filename {filename_in_query!r}; falling back to semantic search.")
 
 			if not relevant_docs:
 				# ---- Retrieval (first pass, narrow) ----
