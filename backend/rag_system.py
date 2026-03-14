@@ -1,56 +1,6 @@
-Your Query
-Summarize the facts in our uploaded judgment 85 & 86.07.doc.
-13:05:25
-Kenya Law AI Response
-
-Tailored for Advocate
-
-Dear Advocate,
-
-I have reviewed the uploaded judgment (85 & 86.07.doc) and summarized the facts as follows:
-
-There are no specific cases or judgments mentioned in this document. The document appears to be a collection of various court proceedings, including consolidated civil applications, appeals, and criminal cases. The cases listed do not appear to be related to each other.
-
-If you would like me to assist you with any specific legal matter or provide guidance on how to proceed with your case, please let me know the relevant details, such as the parties involved, the issues at stake, and the desired outcome. I will do my best to provide a helpful response based on the information provided.
-
-Please note that this document does not contain any relevant information for answering your question.
-
-📚 Sources & Citations
-
-
-CIVIL APP. NAI SUP 12 of 2017.docx
-2 passages ▶
-
-CIVIL APPEAL NO 255 OF 2018 (1).doc
-2 passages ▶
-
-CIVIL APPEAL NO 325 OF 2014 (adverse possession).doc
-2 passages ▶
-
-(G)MSA CRIMINAL APPEAL NO. 67 OF 2020 - Final.docx
-2 passages ▶
-
-CIVIL APPEAL NO 255 OF 2018 .doc
-2 passages ▶
-
-C A 94 of 2018.doc
-2 passages ▶
-
-CIVIL APPEAL NO 12 OF 2018.doc
-2 passages ▶
-
-CIVIL APPEAL NO 130 OF 2017.docx
-2 passages ▶
-
-CIVIL APPEAL NO. E103 OF 2021.docx
-2 passages ▶
-
-CIVIL APPEAL (APPLICATION) NO. E574 OF 2022.docx
-2 passages ▶
-13:05:47
-Role: Advocate"""
-RAG (Retrieval-Augmented Generation) System for PatriotAI Defense Hub
-Integrates document indexing, vector search, and AI-powered responses
+"""
+RAG (Retrieval-Augmented Generation) System for Kenya Law AI.
+Integrates document indexing, vector search, and AI-powered responses.
 """
 
 import os
