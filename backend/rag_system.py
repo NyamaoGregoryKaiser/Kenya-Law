@@ -38,12 +38,21 @@ try:
 except ImportError:
 	document_indexer = None  # optional
 
+# KL_LOOKUP + MongoDB (colleague's pipeline: KL_LOOKUP in Qdrant, documents/document_processing in MongoDB)
+try:
+	from mongo_documents import get_documents_info, parse_document_id_from_kl_lookup_text
+except ImportError:
+	get_documents_info = None
+	parse_document_id_from_kl_lookup_text = None
+
 # Local Ollama configuration (LLM + embeddings)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:3b")
 OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
 MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "24000"))
+USE_KL_LOOKUP = os.getenv("USE_KL_LOOKUP", "").strip().lower() in ("1", "true", "yes")
+QDRANT_KL_LOOKUP_COLLECTION = os.getenv("QDRANT_KL_LOOKUP_COLLECTION", "KL_LOOKUP")
 # Structure-aware chunking: header (case title, court, parties) as its own chunk so it is retrievable.
 HEADER_MAX_CHARS = int(os.getenv("RAG_HEADER_MAX_CHARS", "1500"))
 JUDGMENT_MARKERS = ("JUDGMENT OF THE COURT", "JUDGMENT\n", "\n\nJUDGMENT ")
@@ -97,7 +106,7 @@ class PatriotAIRAGSystem:
 				base_url=OLLAMA_BASE_URL,
 				temperature=0.1,
 			)
-				self.llm_fallback = None
+			self.llm_fallback = None
 			logger.info(f"Answer generation: local Ollama only (model={OLLAMA_LLM_MODEL}, base_url={OLLAMA_BASE_URL}). No Gemini/Google.")
 		except Exception as e:
 			logger.error(f"Failed to initialize Ollama LLM: {e}")
@@ -600,6 +609,88 @@ class PatriotAIRAGSystem:
 			else:
 				raise
 	
+	def _generate_response_via_kl_lookup(self, query: str) -> Dict[str, Any] | None:
+		"""Use Qdrant KL_LOOKUP collection + MongoDB for search and references. Returns None to fall back to default path."""
+		if not self.embeddings or get_documents_info is None or parse_document_id_from_kl_lookup_text is None:
+			return None
+		kl_collection = QDRANT_KL_LOOKUP_COLLECTION
+		client = self._qdrant_client
+		if not client:
+			qdrant_host = os.getenv("QDRANT_HOST", "127.0.0.1")
+			qdrant_port = int(os.getenv("QDRANT_PORT", "6333"))
+			client = QdrantClient(host=qdrant_host, port=qdrant_port)
+		try:
+			if not client.collection_exists(kl_collection):
+				return None
+		except Exception:
+			return None
+		# Embed query and search KL_LOOKUP
+		query_vector = self.embeddings.embed_query(query)
+		k = 10
+		try:
+			results = client.search(
+				collection_name=kl_collection,
+				query_vector=query_vector,
+				limit=k,
+				with_payload=True,
+				with_vectors=False,
+			)
+		except Exception as e:
+			logger.warning("KL_LOOKUP search failed: %s", e)
+			return None
+		if not results:
+			return None
+		# Build context from payload["text"] and collect document_ids
+		rows: List[tuple] = []  # (doc_id or "", text)
+		for hit in results:
+			payload = hit.payload or {}
+			text = payload.get("text") or ""
+			if not text.strip():
+				continue
+			doc_id = payload.get("document_id") or payload.get("collection_id") or parse_document_id_from_kl_lookup_text(text) or ""
+			rows.append((doc_id, text))
+		if not rows:
+			return None
+		document_ids = [r[0] for r in rows if r[0]]
+		context = "\n\n".join(r[1] for r in rows)
+		if len(context) > MAX_CONTEXT_CHARS:
+			context = context[:MAX_CONTEXT_CHARS]
+		# Resolve document names from MongoDB
+		doc_info = get_documents_info(list(dict.fromkeys(document_ids))) if document_ids else {}
+		# Build by_document for sources_detail: use document_name from MongoDB when available
+		by_document: Dict[str, List[str]] = {}
+		for doc_id, text in rows:
+			label = (doc_info.get(doc_id, {}).get("document_name") or doc_id) if doc_id else "Unknown"
+			if label not in by_document:
+				by_document[label] = []
+			by_document[label].append(text[:500] + ("..." if len(text) > 500 else ""))
+		# Generate answer
+		if self.llm:
+			prompt = (
+				"You are a Kenyan legal research assistant. Use ONLY the passages in the Context below to answer the question. "
+				"Do not use any external knowledge or web search. "
+				"If ANY part of the Context answers or partly answers the question, you MUST give that answer. "
+				"Only say 'This information was not found in your uploaded documents' if no passage is relevant. "
+				"Quote or paraphrase only from the Context.\n\n"
+				f"Question: {query}\n\nContext:\n{context}\n\nAnswer based strictly on the Context above:"
+			)
+			answer = self._invoke_with_fallback(prompt)
+		else:
+			answer = f"Based on your query, {len(results)} relevant document(s) were found. Start Ollama to get answers from this content."
+		sources = [f"Document: {path}" for path in by_document.keys()]
+		sources_detail = [{"document": path, "chunks": chunks} for path, chunks in by_document.items()]
+		confidence = min(0.35 + (len(results) - 1) * 0.1, 0.85)
+		logger.info("Retrieval path: KL_LOOKUP + MongoDB (%d docs)", len(by_document))
+		return {
+			"answer": str(answer).strip(),
+			"sources": sources,
+			"sources_detail": sources_detail,
+			"confidence": round(confidence, 2),
+			"timestamp": datetime.now().isoformat(),
+			"documents_found": len(results),
+			"web_sources": 0,
+		}
+
 	def generate_response(self, query: str, use_web_search: bool = False) -> Dict[str, Any]:
 		"""
 		Generate a response using ONLY the uploaded/indexed documents.
@@ -609,6 +700,16 @@ class PatriotAIRAGSystem:
 		"""
 		t0 = time.time()
 		try:
+			# KL_LOOKUP + MongoDB path (colleague's pipeline)
+			if USE_KL_LOOKUP:
+				try:
+					result = self._generate_response_via_kl_lookup(query)
+					if result is not None:
+						result["timestamp"] = datetime.now().isoformat()
+						logger.info(f"total /api/query (KL_LOOKUP): {time.time() - t0:.2f}s")
+						return result
+				except Exception as e:
+					logger.warning("KL_LOOKUP path failed, falling back to default: %s", e)
 			# If the query explicitly mentions a filename (e.g. "85 & 86.07.doc"), fetch that document's chunks first
 			relevant_docs: List[Document] = []
 			used_filename_direct = False
