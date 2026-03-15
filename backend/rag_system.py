@@ -43,7 +43,7 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:3b")
 OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
-MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "16000"))
+MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "24000"))
 # Structure-aware chunking: header (case title, court, parties) as its own chunk so it is retrievable.
 HEADER_MAX_CHARS = int(os.getenv("RAG_HEADER_MAX_CHARS", "1500"))
 JUDGMENT_MARKERS = ("JUDGMENT OF THE COURT", "JUDGMENT\n", "\n\nJUDGMENT ")
@@ -420,6 +420,42 @@ class PatriotAIRAGSystem:
 				logger.debug(f"Could not fetch header for source {source[:50]}...: {e}")
 		# Prepend header chunks so they appear before body chunks in context.
 		return header_docs + relevant_docs
+
+	def _query_definition_terms(self, query: str) -> List[str]:
+		"""Extract terms the user is asking about (e.g. for 'definition of written law') so we can prioritize chunks containing them."""
+		q = (query or "").strip().lower()
+		terms: List[str] = []
+		# Quoted strings: "written law" or 'written law'
+		for m in re.findall(r"[\"']([^\"']{2,50})[\"']", query or "", re.IGNORECASE):
+			terms.append(m.strip())
+		# After "definition of X" or "meaning of X" or "what is X" (allow letters, spaces, digits for Act names)
+		for pattern in [r"definition\s+of\s+([a-z0-9\s]+?)(?:\s+under|\s+in|\.|$)", r"meaning\s+of\s+([a-z0-9\s]+?)(?:\s+under|\s+in|\.|$)", r"what\s+is\s+(?:the\s+)?([a-z0-9\s]+?)(?:\s+under|\s+in|\.|\?|$)"]:
+			m = re.search(pattern, q, re.IGNORECASE)
+			if m:
+				t = m.group(1).strip()
+				if len(t) > 2 and t not in ("the", "a", "an"):
+					terms.append(t)
+		return list(dict.fromkeys(terms))  # unique, order preserved
+
+	def _prioritize_chunks_by_terms(self, query: str, docs: List[Document]) -> List[Document]:
+		"""Put chunks that contain the query's key terms (e.g. 'written law') first so they are not truncated out of context."""
+		terms = self._query_definition_terms(query)
+		if not terms:
+			return docs
+		def score(doc: Document) -> int:
+			raw = (doc.page_content or "").lower()
+			# Normalize whitespace so "written law" matches "written  law" or "written\nlaw" from PDFs
+			text = re.sub(r"\s+", " ", raw)
+			total = 0
+			for t in terms:
+				t_lower = t.lower().strip()
+				t_norm = re.sub(r"\s+", " ", t_lower)
+				if t_norm in text:
+					total += 2  # exact phrase (after normalizing)
+				elif len(t_norm.split()) > 1 and all(w in text for w in t_norm.split() if len(w) > 1):
+					total += 1  # all words present
+			return total
+		return sorted(docs, key=lambda d: -score(d))
 	
 	def _guess_filename_from_case_hint(self, case_hint: str) -> str | None:
 		"""Best-effort guess of a filename corresponding to a case hint string, using semantic search."""
@@ -669,6 +705,8 @@ class PatriotAIRAGSystem:
 			header_start = time.time()
 			relevant_docs = self._ensure_header_chunks(relevant_docs)
 			logger.info(f"header_merge: {time.time() - header_start:.2f}s, total chunks now {len(relevant_docs)}")
+			# Put chunks that contain the asked-for terms (e.g. "written law") first so they survive context truncation
+			relevant_docs = self._prioritize_chunks_by_terms(query, relevant_docs)
 			# Documents-only: do not use web search for the answer
 			context = ""
 			# Group chunks by document path so we can return each document once with its chunks
