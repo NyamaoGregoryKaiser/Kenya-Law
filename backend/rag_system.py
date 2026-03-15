@@ -59,24 +59,23 @@ def _ensure_nltk_data():
 		nltk_data_dir = os.path.join(os.path.dirname(__file__), "nltk_data")
 		os.makedirs(nltk_data_dir, exist_ok=True)
 		nltk.data.path.insert(0, nltk_data_dir)
-		
-		# Download punkt_tab if missing
-		try:
-			nltk.data.find('tokenizers/punkt_tab')
-		except LookupError:
-			logger.info("Downloading NLTK punkt_tab data (required for DOC/DOCX processing)...")
-			nltk.download('punkt_tab', quiet=True, download_dir=nltk_data_dir)
-			logger.info("NLTK punkt_tab downloaded successfully")
-		
+		# Download both punkt and punkt_tab (some envs look for tokenizers/punkt/PY3_tab)
+		for resource in ("punkt", "punkt_tab"):
+			try:
+				nltk.data.find(f"tokenizers/{resource}")
+			except LookupError:
+				logger.info("Downloading NLTK %s (required for DOC/DOCX processing)...", resource)
+				nltk.download(resource, quiet=True, download_dir=nltk_data_dir)
+				logger.info("NLTK %s downloaded successfully", resource)
 		# Download averaged_perceptron_tagger_eng if missing
 		try:
-			nltk.data.find('taggers/averaged_perceptron_tagger_eng')
+			nltk.data.find("taggers/averaged_perceptron_tagger_eng")
 		except LookupError:
-			logger.info("Downloading NLTK averaged_perceptron_tagger_eng data (required for DOC/DOCX processing)...")
-			nltk.download('averaged_perceptron_tagger_eng', quiet=True, download_dir=nltk_data_dir)
+			logger.info("Downloading NLTK averaged_perceptron_tagger_eng (required for DOC/DOCX processing)...")
+			nltk.download("averaged_perceptron_tagger_eng", quiet=True, download_dir=nltk_data_dir)
 			logger.info("NLTK averaged_perceptron_tagger_eng downloaded successfully")
 	except Exception as e:
-		logger.warning(f"Could not ensure NLTK data (DOC/DOCX may fail): {e}")
+		logger.warning("Could not ensure NLTK data (DOC/DOCX may fail): %s", e)
 
 _ensure_nltk_data()
 
