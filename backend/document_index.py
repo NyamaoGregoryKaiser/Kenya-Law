@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from uuid import uuid4
 
 from qdrant_client import QdrantClient
@@ -131,6 +131,98 @@ class DocumentIndexer:
 		except Exception as e:
 			logger.warning(f"Failed to get sample metadata: {e}", exc_info=True)
 		return out
+
+	def get_year_range(self) -> tuple[Optional[int], Optional[int]]:
+		"""
+		Scroll kenyalaw_documents and return (min_year, max_year) from payload.year.
+		Returns (None, None) if no documents or no years found.
+		"""
+		years: List[int] = []
+		try:
+			if not self.client.collection_exists(self.collection_name):
+				return (None, None)
+			offset = None
+			while True:
+				records, offset = self.client.scroll(
+					collection_name=self.collection_name,
+					limit=100,
+					offset=offset,
+					with_payload=True,
+					with_vectors=False,
+				)
+				for rec in records:
+					payload = rec.payload or {}
+					y = payload.get("year")
+					if y is not None:
+						try:
+							years.append(int(y))
+						except (TypeError, ValueError):
+							pass
+				if offset is None:
+					break
+			if not years:
+				return (None, None)
+			return (min(years), max(years))
+		except Exception as e:
+			logger.warning(f"Failed to get year range: {e}", exc_info=True)
+			return (None, None)
+
+	def get_source_counts(self) -> Dict[str, Any]:
+		"""
+		Aggregate counts for data sources:
+		- case_law.total and by_court
+		- legislation.acts_in_force / repealed_statutes / total
+		- kenya_gazette.total and years[]
+		"""
+		result: Dict[str, Any] = {
+			"case_law": {"total": 0, "by_court": {}},
+			"legislation": {"total": 0, "acts_in_force": 0, "repealed_statutes": 0},
+			"kenya_gazette": {"total": 0, "years": []},
+		}
+		try:
+			if not self.client.collection_exists(self.collection_name):
+				return result
+			offset = None
+			years_set = set()
+			while True:
+				records, offset = self.client.scroll(
+					collection_name=self.collection_name,
+					limit=100,
+					offset=offset,
+					with_payload=True,
+					with_vectors=False,
+				)
+				for rec in records:
+					payload = rec.payload or {}
+					st = payload.get("source_type")
+					if st == "case_law":
+						result["case_law"]["total"] += 1
+						ct = payload.get("court_type") or payload.get("court")
+						if ct:
+							result["case_law"]["by_court"][ct] = result["case_law"]["by_court"].get(ct, 0) + 1
+					elif st == "legislation":
+						result["legislation"]["total"] += 1
+						lt = payload.get("legislation_type") or "acts_in_force"
+						if lt == "repealed_statute":
+							result["legislation"]["repealed_statutes"] += 1
+						else:
+							result["legislation"]["acts_in_force"] += 1
+					elif st == "kenya_gazette":
+						result["kenya_gazette"]["total"] += 1
+						gy = payload.get("gazette_year") or payload.get("year")
+						if gy is not None:
+							try:
+								years_set.add(int(gy))
+							except (TypeError, ValueError):
+								pass
+				if offset is None:
+					break
+			if years_set:
+				result["kenya_gazette"]["years"] = sorted(years_set)
+			return result
+		except Exception as e:
+			logger.warning(f"Failed to get source counts: {e}", exc_info=True)
+			return result
 
 
 document_indexer = DocumentIndexer()

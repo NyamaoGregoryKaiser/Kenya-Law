@@ -1,5 +1,5 @@
 import re
-from typing import Dict
+from typing import Dict, Any
 
 
 def extract_legal_metadata(text: str, filename: str) -> Dict:
@@ -110,4 +110,73 @@ def build_master_text(metadata: Dict, text: str) -> str:
 		opening,
 	]
 	return "\n".join([p for p in parts if p])
+
+
+def classify_source(metadata: Dict, filename: str, text: str) -> Dict[str, Any]:
+	"""
+	Classify a document into high-level data sources:
+	- case_law (with court_type)
+	- legislation (acts_in_force / repealed_statute)
+	- kenya_gazette (with gazette_year)
+	"""
+	name = (filename or "").lower()
+	header = (text or "")[:4000]
+	header_up = header.upper()
+
+	out: Dict[str, Any] = {}
+
+	# --- Kenya Gazette ---
+	if "gazette" in name or re.search(r"\bKG\b", filename.upper()):
+		out["source_type"] = "kenya_gazette"
+		year = metadata.get("year")
+		if not year:
+			m = re.search(r"(\d{4})\s*KG", filename.upper())
+			if m:
+				try:
+					year = int(m.group(1))
+				except ValueError:
+					year = None
+		if year:
+			out["gazette_year"] = year
+		return out
+
+	# --- Legislation ---
+	if (
+		"act" in name
+		or "statute" in name
+		or "legislation" in name
+		or "an act of parliament" in header_up
+	):
+		out["source_type"] = "legislation"
+		leg_type = "acts_in_force"
+		if "repealed" in name or "repealed" in header_up:
+			leg_type = "repealed_statute"
+		out["legislation_type"] = leg_type
+		return out
+
+	# --- Default: Case law ---
+	out["source_type"] = "case_law"
+	court_raw = str(metadata.get("court", "") or "").upper()
+	court_type = None
+	if "SUPREME COURT" in court_raw:
+		court_type = "Supreme Court"
+	elif "COURT OF APPEAL" in court_raw:
+		court_type = "Court of Appeal"
+	elif "EMPLOYMENT AND LABOUR RELATIONS" in court_raw or "ELRC" in court_raw:
+		court_type = "Employment and Labour Relations Court"
+	elif "ENVIRONMENT AND LAND" in court_raw or "ELC" in court_raw:
+		court_type = "Environment and Land Court"
+	elif "KADHI" in court_raw:
+		court_type = "Kadhis Court"
+	elif "MAGISTRATE" in court_raw:
+		court_type = "Magistrates Courts"
+	elif "TRIBUNAL" in court_raw:
+		court_type = "Special Tribunals"
+	elif "HIGH COURT" in court_raw:
+		court_type = "High Court"
+
+	if court_type:
+		out["court_type"] = court_type
+
+	return out
 

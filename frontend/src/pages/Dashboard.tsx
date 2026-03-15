@@ -22,6 +22,22 @@ interface RecentDocument {
   indexed_at: string | null;
 }
 
+interface DataSources {
+  case_law?: {
+    total?: number;
+    by_court?: Record<string, number>;
+  };
+  legislation?: {
+    total?: number;
+    acts_in_force?: number;
+    repealed_statutes?: number;
+  };
+  kenya_gazette?: {
+    total?: number;
+    years?: number[];
+  };
+}
+
 const Dashboard: React.FC = () => {
   const [metricsData, setMetricsData] = React.useState<{
     judgments_indexed: number;
@@ -30,6 +46,9 @@ const Dashboard: React.FC = () => {
     total_ai_queries: number;
     last_updated: string;
     recent_documents?: RecentDocument[];
+    coverage_min_year?: number | null;
+    coverage_max_year?: number | null;
+    data_sources?: DataSources | null;
   } | null>(null);
 
   React.useEffect(() => {
@@ -82,13 +101,7 @@ const Dashboard: React.FC = () => {
   ];
 
   const recentDocs = metricsData?.recent_documents ?? [];
-  const maxCourtCount = Math.max(
-    metricsData?.judgments_indexed ?? 0,
-    1
-  );
-  const courtStats = [
-    { name: 'Indexed judgments', count: metricsData?.judgments_indexed ?? 0, color: 'bg-legal-maroon' },
-  ];
+  const dataSources: DataSources | undefined | null = metricsData?.data_sources;
 
   const formatRelativeTime = (iso: string | null) => {
     if (!iso) return '—';
@@ -137,7 +150,13 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
               <p className="text-sm text-white/70">Coverage</p>
-              <p className="mt-1 text-2xl font-serif font-bold text-legal-gold">1963 – 2026</p>
+              <p className="mt-1 text-2xl font-serif font-bold text-legal-gold">
+                {metricsData?.coverage_min_year != null && metricsData?.coverage_max_year != null
+                  ? metricsData.coverage_min_year === metricsData.coverage_max_year
+                    ? String(metricsData.coverage_min_year)
+                    : `${metricsData.coverage_min_year} – ${metricsData.coverage_max_year}`
+                  : '—'}
+              </p>
               <p className="text-xs text-white/60">Years of jurisprudence</p>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
@@ -171,31 +190,62 @@ const Dashboard: React.FC = () => {
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Court Distribution */}
+        {/* Data Sources */}
         <div className="lg:col-span-2">
           <div className="legal-card p-6">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h3 className="text-xl font-serif font-semibold text-legal-text">Court Distribution</h3>
+                <h3 className="text-xl font-serif font-semibold text-legal-text">Data Sources</h3>
+                <p className="text-sm text-legal-text-muted mt-1">
+                  Breakdown of indexed documents by source type.
+                </p>
               </div>
               <TrendingUp className="w-5 h-5 text-legal-gold" />
             </div>
-            
-            {/* Court Stats - real indexed count */}
+
             <div className="space-y-4">
-              {courtStats.map((court, index) => (
-                <div key={index} className="flex items-center gap-4">
-                  <div className="w-40 text-sm font-medium text-legal-text">{court.name}</div>
-                  <div className="flex-1 h-8 bg-legal-maroon-light rounded overflow-hidden">
-                    <div 
-                      className={`h-full ${court.color} rounded flex items-center justify-end pr-3 transition-all duration-500`}
-                      style={{ width: `${maxCourtCount ? (court.count / maxCourtCount) * 100 : 0}%` }}
-                    >
-                      <span className="text-xs font-semibold text-white">{court.count.toLocaleString()}</span>
-                    </div>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-legal-text">Case law documents</p>
+                  <p className="text-xs text-legal-text-muted">
+                    Courts: {(dataSources?.case_law?.by_court && Object.keys(dataSources.case_law.by_court).length) || 0}
+                  </p>
                 </div>
-              ))}
+                <span className="text-lg font-semibold text-legal-maroon">
+                  {(dataSources?.case_law?.total ?? 0).toLocaleString()}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-legal-text">Legislation documents</p>
+                  <p className="text-xs text-legal-text-muted">
+                    Acts in force: {dataSources?.legislation?.acts_in_force ?? 0}, Repealed: {dataSources?.legislation?.repealed_statutes ?? 0}
+                  </p>
+                </div>
+                <span className="text-lg font-semibold text-legal-maroon">
+                  {(dataSources?.legislation?.total ?? 0).toLocaleString()}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-legal-text">Kenya Gazette documents</p>
+                  <p className="text-xs text-legal-text-muted">
+                    {dataSources?.kenya_gazette?.years && dataSources.kenya_gazette.years.length > 0
+                      ? (() => {
+                          const years = dataSources.kenya_gazette!.years!;
+                          const minY = years[0];
+                          const maxY = years[years.length - 1];
+                          return minY === maxY ? `Year ${minY}` : `Years ${minY} – ${maxY}`;
+                        })()
+                      : 'No gazettes indexed yet'}
+                  </p>
+                </div>
+                <span className="text-lg font-semibold text-legal-maroon">
+                  {(dataSources?.kenya_gazette?.total ?? 0).toLocaleString()}
+                </span>
+              </div>
             </div>
           </div>
         </div>

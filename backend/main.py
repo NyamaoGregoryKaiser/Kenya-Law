@@ -28,7 +28,7 @@ except Exception as _e:
 # Import RAG system
 from rag_system import rag_system
 from prompts_store import filter_prompts_for_role, find_prompt_by_id, upsert_prompt, soft_delete_prompt
-from legal_metadata import extract_legal_metadata, build_master_text
+from legal_metadata import extract_legal_metadata, build_master_text, classify_source
 from document_index import document_indexer
 from db_conversations import (
 	create_conversation,
@@ -618,8 +618,10 @@ async def upload_document(
 			full_text = "\n\n".join(d.page_content for d in docs) if docs else ""
 			legal_meta = extract_legal_metadata(full_text, file.filename)
 			master_text = build_master_text(legal_meta, full_text)
+			# Classify high-level source type (case law / legislation / Kenya Gazette)
+			source_meta = classify_source(legal_meta, file.filename, full_text)
 			# Merge upload metadata into legal_meta for richer payload
-			payload = {**legal_meta, **metadata, "master_text": master_text}
+			payload = {**legal_meta, **metadata, **source_meta, "master_text": master_text}
 			doc_id = legal_meta.get("doc_id", document_id)
 			document_indexer.upsert_document(doc_id=doc_id, master_text=master_text, payload=payload)
 		except Exception as e:
@@ -752,6 +754,16 @@ async def get_dashboard_metrics(
 		ai_queries_today = int(metrics_data.get("daily", {}).get(today, 0))
 		total_ai_queries = int(metrics_data.get("total_ai_queries", 0))
 
+	# Year range from document metadata (payload.year) for coverage display
+	coverage_min_year = None
+	coverage_max_year = None
+	data_sources = None
+	try:
+		coverage_min_year, coverage_max_year = document_indexer.get_year_range()
+		data_sources = document_indexer.get_source_counts()
+	except Exception as e:
+		logging.warning(f"Failed to get document-level metrics for dashboard: {e}")
+
 	return {
 		"judgments_indexed": total_indexed,
 		"documents_uploaded": total_uploaded,
@@ -759,6 +771,9 @@ async def get_dashboard_metrics(
 		"total_ai_queries": total_ai_queries,
 		"last_updated": datetime.now().isoformat(),
 		"recent_documents": recent_documents,
+		"coverage_min_year": coverage_min_year,
+		"coverage_max_year": coverage_max_year,
+		"data_sources": data_sources,
 	}
 
 if __name__ == "__main__":
