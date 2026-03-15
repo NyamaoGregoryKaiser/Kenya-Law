@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { 
   Scale, 
   BookOpen, 
@@ -16,6 +17,12 @@ import MapWidget from '../components/MapWidget';
 import MetricCard from '../components/MetricCard';
 import { API_BASE } from '../utils/api';
 
+interface RecentDocument {
+  filename: string;
+  uploaded_at: string;
+  indexed_at: string | null;
+}
+
 const Dashboard: React.FC = () => {
   const [metricsData, setMetricsData] = React.useState<{
     judgments_indexed: number;
@@ -23,6 +30,7 @@ const Dashboard: React.FC = () => {
     ai_queries_today: number;
     total_ai_queries: number;
     last_updated: string;
+    recent_documents?: RecentDocument[];
   } | null>(null);
 
   React.useEffect(() => {
@@ -58,7 +66,7 @@ const Dashboard: React.FC = () => {
     },
     { 
       title: 'Courts Covered', 
-      value: '—', 
+      value: (metricsData?.judgments_indexed ?? 0).toLocaleString(), 
       change: '', 
       changeType: 'neutral' as const, 
       icon: Building2, 
@@ -74,56 +82,27 @@ const Dashboard: React.FC = () => {
     }
   ];
 
-  const recentJudgments = [
-    {
-      id: 1,
-      caseName: 'Republic v. John Kamau',
-      court: 'High Court',
-      citation: '[2026] eKLR 1234',
-      date: '2 hours ago',
-      type: 'Criminal'
-    },
-    {
-      id: 2,
-      caseName: 'Mwangi & Another v. KRA',
-      court: 'Court of Appeal',
-      citation: '[2026] eKLR 1189',
-      date: '5 hours ago',
-      type: 'Tax'
-    },
-    {
-      id: 3,
-      caseName: 'In Re: Estate of Ochieng',
-      court: 'High Court',
-      citation: '[2026] eKLR 1156',
-      date: '1 day ago',
-      type: 'Succession'
-    },
-    {
-      id: 4,
-      caseName: 'Wanjiku v. Nairobi County',
-      court: 'ELC',
-      citation: '[2026] eKLR 1098',
-      date: '2 days ago',
-      type: 'Land'
-    }
-  ];
-
+  const recentDocs = metricsData?.recent_documents ?? [];
+  const maxCourtCount = Math.max(
+    metricsData?.judgments_indexed ?? 0,
+    1
+  );
   const courtStats = [
-    { name: 'Supreme Court', count: 234, color: 'bg-legal-maroon' },
-    { name: 'Court of Appeal', count: 1567, color: 'bg-legal-maroon/80' },
-    { name: 'High Court', count: 8234, color: 'bg-legal-gold' },
-    { name: 'ELC', count: 1456, color: 'bg-legal-gold/80' },
-    { name: 'ELRC', count: 965, color: 'bg-legal-maroon/60' }
+    { name: 'Indexed judgments', count: metricsData?.judgments_indexed ?? 0, color: 'bg-legal-maroon' },
   ];
 
-  const getCourtBadgeClass = (court: string) => {
-    switch (court) {
-      case 'Supreme Court': return 'court-badge supreme';
-      case 'Court of Appeal': return 'court-badge appeal';
-      case 'High Court': return 'court-badge high';
-      default: return 'court-badge high';
-    }
+  const formatRelativeTime = (iso: string | null) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+    return d.toLocaleDateString();
   };
 
   return (
@@ -152,7 +131,9 @@ const Dashboard: React.FC = () => {
           <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
               <p className="text-sm text-white/70">Legal Corpus</p>
-              <p className="mt-1 text-2xl font-serif font-bold text-legal-gold">12,456+</p>
+              <p className="mt-1 text-2xl font-serif font-bold text-legal-gold">
+                {(metricsData?.judgments_indexed ?? 0).toLocaleString()}+
+              </p>
               <p className="text-xs text-white/60">Judgments indexed</p>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
@@ -201,15 +182,15 @@ const Dashboard: React.FC = () => {
               <TrendingUp className="w-5 h-5 text-legal-gold" />
             </div>
             
-            {/* Court Stats */}
+            {/* Court Stats - real indexed count */}
             <div className="space-y-4">
               {courtStats.map((court, index) => (
                 <div key={index} className="flex items-center gap-4">
-                  <div className="w-32 text-sm font-medium text-legal-text">{court.name}</div>
+                  <div className="w-40 text-sm font-medium text-legal-text">{court.name}</div>
                   <div className="flex-1 h-8 bg-legal-maroon-light rounded overflow-hidden">
                     <div 
                       className={`h-full ${court.color} rounded flex items-center justify-end pr-3 transition-all duration-500`}
-                      style={{ width: `${(court.count / 8234) * 100}%` }}
+                      style={{ width: `${maxCourtCount ? (court.count / maxCourtCount) * 100 : 0}%` }}
                     >
                       <span className="text-xs font-semibold text-white">{court.count.toLocaleString()}</span>
                     </div>
@@ -238,35 +219,39 @@ const Dashboard: React.FC = () => {
           </div>
           
           <div className="space-y-4">
-            {recentJudgments.map((judgment) => (
+            {recentDocs.length === 0 && (
+              <p className="text-sm text-legal-text-muted py-4">No indexed judgments yet. Upload documents from the Uploads page.</p>
+            )}
+            {recentDocs.map((doc) => (
               <div
-                key={judgment.id}
+                key={doc.filename}
                 className="p-4 rounded-lg bg-legal-bg border border-legal-border hover:border-legal-gold/50 transition-colors cursor-pointer"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-serif font-semibold text-legal-text text-sm truncate">
-                      {judgment.caseName}
+                    <h4 className="font-serif font-semibold text-legal-text text-sm truncate" title={doc.filename}>
+                      {doc.filename}
                     </h4>
-                    <p className="text-xs text-legal-maroon font-mono mt-1">{judgment.citation}</p>
+                    <p className="text-xs text-legal-maroon font-mono mt-1 truncate">{doc.filename}</p>
                   </div>
-                  <span className={getCourtBadgeClass(judgment.court)}>
-                    {judgment.court}
-                  </span>
+                  <span className="court-badge high">Indexed</span>
                 </div>
                 <div className="flex items-center justify-between mt-3 text-xs text-legal-text-muted">
                   <span className="px-2 py-0.5 bg-legal-gold-light text-legal-gold-dark rounded border border-legal-gold/30">
-                    {judgment.type}
+                    Document
                   </span>
-                  <span>{judgment.date}</span>
+                  <span>{formatRelativeTime(doc.indexed_at ?? doc.uploaded_at)}</span>
                 </div>
               </div>
             ))}
           </div>
 
-          <button className="w-full mt-4 py-2.5 text-sm font-medium text-legal-maroon hover:text-legal-maroon-dark border border-legal-maroon/30 rounded-lg hover:bg-legal-maroon-light transition-colors">
-            View All Judgments
-          </button>
+          <Link
+            to="/uploads"
+            className="block w-full mt-4 py-2.5 text-sm font-medium text-center text-legal-maroon hover:text-legal-maroon-dark border border-legal-maroon/30 rounded-lg hover:bg-legal-maroon-light transition-colors"
+          >
+            View All Documents
+          </Link>
         </div>
       </div>
 
@@ -276,30 +261,30 @@ const Dashboard: React.FC = () => {
         <p className="text-sm text-legal-text-muted mb-4">Shortcuts</p>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <button className="flex items-center space-x-3 p-4 rounded-lg btn-legal">
+          <Link to="/ask-ai" className="flex items-center space-x-3 p-4 rounded-lg btn-legal">
             <Search className="w-5 h-5" />
             <div className="text-left">
               <div className="font-medium">Search Case Law</div>
             </div>
-          </button>
-          <button className="flex items-center space-x-3 p-4 rounded-lg btn-legal">
+          </Link>
+          <Link to="/ask-ai" className="flex items-center space-x-3 p-4 rounded-lg btn-legal">
             <Scale className="w-5 h-5" />
             <div className="text-left">
               <div className="font-medium">Ask Legal AI</div>
             </div>
-          </button>
-          <button className="flex items-center space-x-3 p-4 rounded-lg btn-legal-maroon">
+          </Link>
+          <Link to="/uploads" className="flex items-center space-x-3 p-4 rounded-lg btn-legal-maroon">
             <FileUp className="w-5 h-5" />
             <div className="text-left">
               <div className="font-medium">Upload Judgment</div>
             </div>
-          </button>
-          <button className="flex items-center space-x-3 p-4 rounded-lg btn-legal">
+          </Link>
+          <Link to="/ask-ai" className="flex items-center space-x-3 p-4 rounded-lg btn-legal">
             <FileText className="w-5 h-5" />
             <div className="text-left">
               <div className="font-medium">Generate Brief</div>
             </div>
-          </button>
+          </Link>
         </div>
       </div>
 

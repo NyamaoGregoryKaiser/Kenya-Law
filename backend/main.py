@@ -698,16 +698,17 @@ async def get_dashboard_metrics(
 	current_user: dict = Depends(get_current_user)
 ):
 	"""
-	Get dashboard metrics and statistics
+	Get dashboard metrics and statistics (real data from uploads, index status, and metrics.json).
 	"""
-	# Judgments indexed / documents uploaded from index status
 	upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
 	total_uploaded = 0
 	total_indexed = 0
+	recent_documents: List[dict] = []
 	if os.path.isdir(upload_dir):
 		all_files = os.listdir(upload_dir)
 		status_map = _load_index_status(upload_dir)
 		status_filename = os.path.basename(_index_status_path(upload_dir))
+		indexed_entries: List[tuple] = []
 		for name in all_files:
 			if name == status_filename:
 				continue
@@ -719,8 +720,21 @@ async def get_dashboard_metrics(
 			is_indexed = bool(val.get("indexed", False)) if isinstance(val, dict) else bool(val)
 			if is_indexed:
 				total_indexed += 1
+				try:
+					stat = os.stat(path)
+					updated_at = (val.get("updated_at") if isinstance(val, dict) else None) or datetime.fromtimestamp(stat.st_mtime).isoformat()
+					indexed_entries.append((name, updated_at, stat.st_mtime))
+				except Exception:
+					indexed_entries.append((name, None, 0))
+		indexed_entries.sort(key=lambda x: x[2], reverse=True)
+		for name, updated_at, _ in indexed_entries[:15]:
+			recent_documents.append({
+				"filename": name,
+				"uploaded_at": updated_at or datetime.now().isoformat(),
+				"indexed_at": updated_at,
+			})
 
-	# AI queries today from metrics.json
+	# AI queries from metrics.json
 	ai_queries_today = 0
 	total_ai_queries = 0
 	try:
@@ -733,7 +747,6 @@ async def get_dashboard_metrics(
 	except Exception as e:
 		logging.warning(f"Failed to read metrics file: {e}")
 		metrics_data = {}
-
 	today = datetime.now().date().isoformat()
 	if isinstance(metrics_data, dict):
 		ai_queries_today = int(metrics_data.get("daily", {}).get(today, 0))
@@ -744,7 +757,8 @@ async def get_dashboard_metrics(
 		"documents_uploaded": total_uploaded,
 		"ai_queries_today": ai_queries_today,
 		"total_ai_queries": total_ai_queries,
-		"last_updated": datetime.now().isoformat()
+		"last_updated": datetime.now().isoformat(),
+		"recent_documents": recent_documents,
 	}
 
 if __name__ == "__main__":
