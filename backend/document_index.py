@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import Dict
+from typing import Dict, List, Any
 from uuid import uuid4
 
 from qdrant_client import QdrantClient
@@ -9,6 +9,13 @@ from langchain_community.embeddings import OllamaEmbeddings
 
 
 logger = logging.getLogger("document_index")
+
+
+def _filter_for_filename(filename: str):
+	"""Build Qdrant filter for payload filename (flat key)."""
+	return qmodels.Filter(
+		must=[qmodels.FieldCondition(key="filename", match=qmodels.MatchValue(value=filename))]
+	)
 
 
 class DocumentIndexer:
@@ -60,6 +67,45 @@ class DocumentIndexer:
 			logger.info(f"Upserted document {doc_id} into {self.collection_name} as point_id={point_id}")
 		except Exception as e:
 			logger.error(f"Failed to upsert document {doc_id} into {self.collection_name}: {e}", exc_info=True)
+
+	def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
+		"""
+		Phase 2: search document-level index by query; return list of payloads (each with "filename").
+		"""
+		try:
+			emb = self._get_embeddings()
+			vector = emb.embed_query(query)
+			results = self.client.search(
+				collection_name=self.collection_name,
+				query_vector=vector,
+				limit=k,
+				with_payload=True,
+				with_vectors=False,
+			)
+			payloads = []
+			for hit in results:
+				payload = (hit.payload or {}).copy()
+				if payload.get("filename"):
+					payloads.append(payload)
+			logger.info(f"Document-level search returned {len(payloads)} docs for query (k={k})")
+			return payloads
+		except Exception as e:
+			logger.warning(f"Document-level search failed: {e}", exc_info=True)
+			return []
+
+	def delete_by_filename(self, filename: str) -> bool:
+		"""Delete all points in kenyalaw_documents whose payload.filename equals filename."""
+		try:
+			f = _filter_for_filename(filename)
+			self.client.delete(
+				collection_name=self.collection_name,
+				points_selector=f,
+			)
+			logger.info(f"Deleted document-level points for filename={filename!r} from {self.collection_name}")
+			return True
+		except Exception as e:
+			logger.warning(f"Failed to delete from {self.collection_name} for filename={filename!r}: {e}")
+			return False
 
 
 document_indexer = DocumentIndexer()

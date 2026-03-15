@@ -430,13 +430,18 @@ async def delete_document(filename: str, current_user: dict = Depends(get_curren
 				logging.info(f"Files in upload directory: {existing_files}")
 			raise HTTPException(status_code=404, detail=f"Document not found: {decoded_filename}")
 		
-		# Delete from vector store first
+		# Delete from vector stores: chunk index (kenyalaw_cases) and document index (kenyalaw_documents)
 		try:
 			rag_system.delete_document(decoded_filename)
-			logging.info(f"Deleted {decoded_filename} from vector store")
+			logging.info(f"Deleted {decoded_filename} from vector store (kenyalaw_cases)")
 		except Exception as vec_error:
 			logging.warning(f"Failed to delete {decoded_filename} from vector store: {vec_error}")
-			# Continue with file deletion even if vector store deletion fails
+		try:
+			document_indexer.delete_by_filename(decoded_filename)
+			logging.info(f"Deleted {decoded_filename} from document-level index (kenyalaw_documents)")
+		except Exception as doc_idx_error:
+			logging.warning(f"Failed to delete {decoded_filename} from document index: {doc_idx_error}")
+			# Continue with file deletion even if document index deletion fails
 		
 		# Delete the file from disk
 		try:

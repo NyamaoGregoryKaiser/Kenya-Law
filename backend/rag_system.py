@@ -32,6 +32,12 @@ from langchain_community.vectorstores import Qdrant
 from langchain_community.chat_models import ChatOllama
 from langchain_community.embeddings import OllamaEmbeddings
 
+# Phase 2: document-level index for two-stage retrieval
+try:
+	from document_index import document_indexer
+except ImportError:
+	document_indexer = None  # optional
+
 # Local Ollama configuration (LLM + embeddings)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:3b")
@@ -548,6 +554,7 @@ class PatriotAIRAGSystem:
 			# If the query explicitly mentions a filename (e.g. "85 & 86.07.doc"), fetch that document's chunks first
 			relevant_docs: List[Document] = []
 			used_filename_direct = False
+			used_phase2 = False
 			filename_in_query = self._extract_filename_from_query(query)
 			if filename_in_query:
 				logger.info(f"Filename extracted from query: {filename_in_query!r}")
@@ -560,13 +567,38 @@ class PatriotAIRAGSystem:
 					logger.warning(f"No chunks found for filename {filename_in_query!r}; falling back to semantic search.")
 
 			if not relevant_docs:
-				# ---- Retrieval (first pass, narrow) ----
-				retrieval_start = time.time()
-				relevant_docs = self.search_documents(query, k=10)
-				logger.info(f"retrieval pass1: {len(relevant_docs)} chunks in {time.time() - retrieval_start:.2f}s")
+				# ---- Phase 2: document-level search then fetch chunks for top docs ----
+				if document_indexer is not None:
+					try:
+						phase2_start = time.time()
+						doc_payloads = document_indexer.search(query, k=5)
+						seen_keys: set = set()
+						phase2_docs: List[Document] = []
+						for payload in doc_payloads:
+							fname = payload.get("filename") or payload.get("doc_id")
+							if not fname:
+								continue
+							chunks = self._fetch_all_chunks_for_filename(fname)
+							for doc in chunks:
+								key = (doc.metadata.get("source", ""), doc.metadata.get("chunk_index"))
+								if key not in seen_keys:
+									seen_keys.add(key)
+									phase2_docs.append(doc)
+						if phase2_docs:
+							relevant_docs = phase2_docs
+							used_phase2 = True
+							logger.info(f"Phase 2 retrieval: {len(relevant_docs)} chunks from {len(doc_payloads)} doc(s) in {time.time() - phase2_start:.2f}s")
+					except Exception as e:
+						logger.warning(f"Phase 2 retrieval failed, falling back to chunk search: {e}")
 
-			# If retrieval is very weak, try a broader second pass before giving up (only when not filename-directed)
-			if not filename_in_query and len(relevant_docs) < 3:
+				if not relevant_docs:
+					# ---- Fallback: retrieval from chunk index (first pass, narrow) ----
+					retrieval_start = time.time()
+					relevant_docs = self.search_documents(query, k=10)
+					logger.info(f"retrieval pass1: {len(relevant_docs)} chunks in {time.time() - retrieval_start:.2f}s")
+
+			# If retrieval is very weak, try a broader second pass before giving up (only when not filename-directed and not Phase 2)
+			if not filename_in_query and not used_phase2 and len(relevant_docs) < 3:
 				retrieval2_start = time.time()
 				broader_docs = self.search_documents(query, k=40)
 				logger.info(f"retrieval pass2: {len(broader_docs)} chunks in {time.time() - retrieval2_start:.2f}s")
