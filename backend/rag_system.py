@@ -43,7 +43,7 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:3b")
 OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
-MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "6000"))
+MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "16000"))
 # Structure-aware chunking: header (case title, court, parties) as its own chunk so it is retrievable.
 HEADER_MAX_CHARS = int(os.getenv("RAG_HEADER_MAX_CHARS", "1500"))
 JUDGMENT_MARKERS = ("JUDGMENT OF THE COURT", "JUDGMENT\n", "\n\nJUDGMENT ")
@@ -705,12 +705,11 @@ class PatriotAIRAGSystem:
 				prompt = (
 					"You are a Kenyan legal research assistant. Use ONLY the passages in the Context below to answer the question. "
 					"Do not use any external knowledge or web search. "
-					"If the Context clearly contains relevant information (e.g. parties, case number, issues, holdings), you MUST use it to answer, "
-					"and you may logically connect and explain events as long as you do not invent facts that are not supported by the text. "
-					"If the Context truly contains no discussion relevant to the question, say: "
-					"'This information was not found in your uploaded documents.' "
-					"Do NOT say that information is 'not explicitly named' if it actually appears in the Context (for example, party names before 'APPELLANT' or 'RESPONDENT'). "
-					"Quote or paraphrase only from the Context. Do not add legal principles, cases, or facts that are not present in the Context.\n\n"
+					"Search through the entire Context for the topic, term, or definition asked about. "
+					"If ANY part of the Context answers or partly answers the question (e.g. a definition, a section, parties, holdings), you MUST give that answer—do NOT say the information was not found. "
+					"Only say 'This information was not found in your uploaded documents' if you have read the whole Context and no passage in it is relevant to the question. "
+					"Do not say information is 'not explicitly named' if it actually appears in the Context. "
+					"Quote or paraphrase only from the Context. Do not add facts not present in the Context.\n\n"
 					f"Question: {query}\n\nContext:\n{context}\n\n"
 					"Answer based strictly on the Context above:"
 				)
