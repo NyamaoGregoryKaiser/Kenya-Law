@@ -30,6 +30,16 @@ from rag_system import rag_system
 from prompts_store import filter_prompts_for_role, find_prompt_by_id, upsert_prompt, soft_delete_prompt
 from legal_metadata import extract_legal_metadata, build_master_text
 from document_index import document_indexer
+from db_conversations import (
+	create_conversation,
+	list_conversations,
+	get_conversation,
+	get_messages,
+	add_message,
+	update_conversation_title,
+	delete_conversation,
+	title_from_first_query,
+)
 
 # Import Open WebUI components
 try:
@@ -123,9 +133,10 @@ class HistoryTurn(BaseModel):
 class QueryRequest(BaseModel):
 	query: str
 	use_web_search: bool = False
+	conversation_id: Optional[str] = None  # when set, messages are persisted and history loaded from DB
 	context_documents: Optional[List[str]] = None
 	system_prompt: Optional[str] = None
-	user_rank: Optional[str] = None  # e.g., "Advocate", "Judge", "Legal Researcher"
+	user_rank: Optional[str] = None
 	history: Optional[List[HistoryTurn]] = None
 	
 class SourceDetail(BaseModel):
@@ -140,6 +151,7 @@ class QueryResponse(BaseModel):
 	rank_applied: Optional[str] = None
 	prompt_used: Optional[str] = None
 	sources_detail: Optional[List[SourceDetail]] = None
+	conversation_id: Optional[str] = None  # set when conversation_id was in request or new conv created
 
 class DocumentUploadResponse(BaseModel):
 	document_id: str
@@ -222,26 +234,54 @@ async def delete_prompt(pid: str, current_user: dict = Depends(get_current_user)
 		raise HTTPException(status_code=404, detail="Prompt not found or already inactive")
 	return {"status": "deleted", "id": pid}
 
-# adjust /api/query to resolve prompt id if provided via system_prompt field containing the id
-# (keep previous behavior for raw text)
-def _rewrite_query_if_followup(request: QueryRequest) -> str:
+# ---------- Conversation history (persistent per-user) ----------
+@app.post("/api/conversations")
+async def api_create_conversation(current_user: dict = Depends(get_current_user)):
+	"""Create a new conversation for the current user."""
+	user_id = str(current_user.get("id", "1"))
+	conv = create_conversation(user_id=user_id, title="New Chat")
+	return conv
+
+@app.get("/api/conversations")
+async def api_list_conversations(current_user: dict = Depends(get_current_user)):
+	"""List conversations for the current user, newest first."""
+	user_id = str(current_user.get("id", "1"))
+	return {"conversations": list_conversations(user_id=user_id)}
+
+@app.get("/api/conversations/{conversation_id}")
+async def api_get_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
+	"""Get one conversation with its messages."""
+	user_id = str(current_user.get("id", "1"))
+	conv = get_conversation(conversation_id, user_id)
+	if not conv:
+		raise HTTPException(status_code=404, detail="Conversation not found")
+	messages = get_messages(conversation_id, user_id)
+	return {"conversation": conv, "messages": messages}
+
+@app.delete("/api/conversations/{conversation_id}")
+async def api_delete_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
+	"""Delete a conversation and all its messages."""
+	user_id = str(current_user.get("id", "1"))
+	if not delete_conversation(conversation_id, user_id):
+		raise HTTPException(status_code=404, detail="Conversation not found")
+	return {"status": "deleted", "id": conversation_id}
+
+
+def _rewrite_query_if_followup(query: str, history: Optional[List[dict]] = None) -> str:
 	"""
-	Simple conversational memory:
-	- If the current query is short/vague and there is prior history,
-	  append the last user topic so retrieval has context.
+	Simple conversational memory: if the current query is short/vague and there is prior
+	history, append the last user topic so retrieval has context. history is a list of
+	{"role": "user"|"assistant", "content": "..."}.
 	"""
-	q = (request.query or "").strip()
-	if not request.history:
+	q = (query or "").strip()
+	if not history:
 		return q
-	
 	lower_q = q.lower()
-	# Short, vague follow-ups like "give me details", "explain further", "what about the judge?"
 	if len(q.split()) <= 6 and any(phrase in lower_q for phrase in ["details", "explain", "more", "what about", "reasoning", "judge", "what happened next"]):
-		# Find the last substantive user question
-		for turn in reversed(request.history):
-			if turn.role != "user":
+		for turn in reversed(history):
+			if turn.get("role") != "user":
 				continue
-			previous = (turn.content or "").strip()
+			previous = (turn.get("content") or "").strip()
 			if len(previous.split()) >= 4:
 				return f"{q} about {previous}"
 	return q
@@ -253,47 +293,58 @@ async def query_ai(
 	current_user: dict = Depends(get_current_user)
 ):
 	"""
-	Process AI queries with RAG capabilities, with light conversational query rewriting
-	for short follow-up questions.
+	Process AI queries with RAG. When conversation_id is provided (or created),
+	user and assistant messages are persisted; history is loaded from DB for context.
 	"""
 	try:
-		role_preamble = ""
-		if request.user_rank:
-			role_preamble = (
-				f"You are responding to a legal professional (role: {request.user_rank}). "
-				"Tailor depth, tone, and recommendations appropriately for this audience. "
-			)
-		
-		custom_system = request.system_prompt
-		# If the client sent an id-like value that matches a prompt, resolve it server-side
-		if custom_system and len(custom_system) <= 64:
-			resolved = find_prompt_by_id(custom_system)
-			if resolved:
-				custom_system = resolved.get('prompt_text')
-		
-		if not custom_system:
-			custom_system = (
+		user_id = str(current_user.get("id", "1"))
+
+		# Resolve or create conversation
+		if request.conversation_id:
+			conv = get_conversation(request.conversation_id, user_id)
+			if not conv:
+				raise HTTPException(status_code=404, detail="Conversation not found")
+			conversation_id = request.conversation_id
+		else:
+			conv = create_conversation(user_id=user_id, title="New Chat")
+			conversation_id = conv["id"]
+
+		existing_messages = get_messages(conversation_id, user_id)
+		history_for_rewrite = [{"role": m["role"], "content": m["content"]} for m in existing_messages[-12:]]
+
+		# First user message in this conversation -> set title from query
+		if len(existing_messages) == 0:
+			update_conversation_title(conversation_id, user_id, title_from_first_query(request.query))
+
+		# Persist user message
+		add_message(conversation_id, user_id, "user", request.query)
+
+		# Rewrite short follow-ups using conversation history from DB
+		query_rewrite_start = time.time()
+		rewritten_query = _rewrite_query_if_followup(request.query, history_for_rewrite)
+		logging.info(f"query_rewrite took {time.time() - query_rewrite_start:.2f}s")
+
+		system_prompt = (
 			"You are Kenya Law AI, an assistant for Kenyan law and jurisprudence. "
 			"Be accurate, concise, and practical. Explain relevant legal principles, case law, and statutes, "
 			"highlight important precedents, and clearly state assumptions. Use clear, professional English."
-			)
+		)
 
-		# Rewrite short follow-up questions using conversation history
-		query_rewrite_start = time.time()
-		rewritten_query = _rewrite_query_if_followup(request)
-		logging.info(f"query_rewrite took {time.time() - query_rewrite_start:.2f}s")
-
-		# RAG: retrieval (Qdrant) + answer generation (local Ollama only, no Gemini)
+		# RAG: retrieval + answer generation (query only, no role preamble)
 		response = rag_system.generate_response(
-			query=f"{role_preamble}{rewritten_query}",
+			query=rewritten_query,
 			use_web_search=request.use_web_search
 		)
-		# Do not append raw system prompt to the answer; keep response clean for the UI
 
 		sources_detail = response.get("sources_detail")
 		if sources_detail is not None:
 			sources_detail = [SourceDetail(document=sd["document"], chunks=sd["chunks"]) for sd in sources_detail]
-		# Update AI query metrics (simple daily counter on disk)
+		sources_json = json.dumps([{"document": sd.document, "chunks": sd.chunks} for sd in (sources_detail or [])]) if sources_detail else None
+
+		# Persist assistant message
+		add_message(conversation_id, user_id, "assistant", response["answer"], sources_json=sources_json)
+
+		# Update metrics
 		try:
 			m_path = _metrics_path()
 			if os.path.exists(m_path):
@@ -304,7 +355,6 @@ async def query_ai(
 		except Exception as e:
 			logging.warning(f"Failed to read metrics file before update: {e}")
 			metrics_data = {}
-
 		try:
 			today = datetime.now().date().isoformat()
 			if not isinstance(metrics_data, dict):
@@ -323,10 +373,13 @@ async def query_ai(
 			sources=response["sources"],
 			confidence=response["confidence"],
 			timestamp=datetime.fromisoformat(response["timestamp"]),
-			rank_applied=request.user_rank,
-			prompt_used=(custom_system[:4000] if custom_system else None),
-			sources_detail=sources_detail
+			rank_applied=None,
+			prompt_used=system_prompt[:4000] if system_prompt else None,
+			sources_detail=sources_detail,
+			conversation_id=conversation_id,
 		)
+	except HTTPException:
+		raise
 	except Exception as e:
 		logging.error(f"Query processing failed: {e}")
 		raise HTTPException(status_code=500, detail=str(e))
