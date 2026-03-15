@@ -107,6 +107,31 @@ class DocumentIndexer:
 			logger.warning(f"Failed to delete from {self.collection_name} for filename={filename!r}: {e}")
 			return False
 
+	def get_sample_metadata(self, limit: int = 10) -> List[Dict[str, Any]]:
+		"""
+		Scroll kenyalaw_documents and return sample payloads (metadata) for inspection.
+		Drops vectors and truncates master_text so you can see what fields are available for the dashboard.
+		"""
+		out: List[Dict[str, Any]] = []
+		try:
+			if not self.client.collection_exists(self.collection_name):
+				return []
+			records, _ = self.client.scroll(
+				collection_name=self.collection_name,
+				limit=limit,
+				with_payload=True,
+				with_vectors=False,
+			)
+			for rec in records:
+				payload = (rec.payload or {}).copy()
+				# Truncate long text for readability
+				if payload.get("master_text") and len(payload["master_text"]) > 500:
+					payload["master_text"] = payload["master_text"][:500] + "..."
+				out.append(payload)
+		except Exception as e:
+			logger.warning(f"Failed to get sample metadata: {e}", exc_info=True)
+		return out
+
 
 document_indexer = DocumentIndexer()
 
