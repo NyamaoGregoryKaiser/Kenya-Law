@@ -455,7 +455,30 @@ class PatriotAIRAGSystem:
 					total += 1  # all words present
 			return total
 		return sorted(docs, key=lambda d: -score(d))
-	
+
+	def _put_definition_chunk_first(self, query: str, docs: List[Document]) -> List[Document]:
+		"""For 'definition of X' queries, move the chunk that contains 'X means—' or '"X" means' to the very start so the LLM always sees it."""
+		terms = self._query_definition_terms(query)
+		if not terms or not docs:
+			return docs
+		for term in terms:
+			term_esc = re.escape(term)
+			# Match "'written law' means—" or '"written law" means' or "written law means:" etc.
+			pattern = rf"[\"']?{term_esc}[\"']?\s+means\s*[—\-:\s]"
+			for i, doc in enumerate(docs):
+				content = (doc.page_content or "")
+				if re.search(pattern, content, re.IGNORECASE):
+					if i == 0:
+						return docs
+					# Include next chunk if same document (often the (a)(b)(c) list)
+					first = [doc]
+					src = doc.metadata.get("source")
+					if i + 1 < len(docs) and docs[i + 1].metadata.get("source") == src:
+						first.append(docs[i + 1])
+					rest = [d for j, d in enumerate(docs) if j != i and j != i + 1]
+					return first + rest
+		return docs
+
 	def _guess_filename_from_case_hint(self, case_hint: str) -> str | None:
 		"""Best-effort guess of a filename corresponding to a case hint string, using semantic search."""
 		try:
@@ -706,6 +729,8 @@ class PatriotAIRAGSystem:
 			logger.info(f"header_merge: {time.time() - header_start:.2f}s, total chunks now {len(relevant_docs)}")
 			# Put chunks that contain the asked-for terms (e.g. "written law") first so they survive context truncation
 			relevant_docs = self._prioritize_chunks_by_terms(query, relevant_docs)
+			# For "definition of X" queries, ensure the chunk containing "X means—" is at the very start
+			relevant_docs = self._put_definition_chunk_first(query, relevant_docs)
 			# Documents-only: do not use web search for the answer
 			context = ""
 			# Group chunks by document path so we can return each document once with its chunks
@@ -742,10 +767,9 @@ class PatriotAIRAGSystem:
 				prompt = (
 					"You are a Kenyan legal research assistant. Use ONLY the passages in the Context below to answer the question. "
 					"Do not use any external knowledge or web search. "
-					"Search through the entire Context for the topic, term, or definition asked about. "
-					"If ANY part of the Context answers or partly answers the question (e.g. a definition, a section, parties, holdings), you MUST give that answer—do NOT say the information was not found. "
-					"Only say 'This information was not found in your uploaded documents' if you have read the whole Context and no passage in it is relevant to the question. "
-					"Do not say information is 'not explicitly named' if it actually appears in the Context. "
+					"If the question asks for a definition and the Context contains a definition (e.g. a phrase like 'X means—' or 'X means:' followed by a list or explanation), you MUST provide that definition from the Context—do NOT say the information was not found. "
+					"For any question, if ANY part of the Context answers or partly answers it (definition, section, parties, holdings), you MUST give that answer. "
+					"Only say 'This information was not found in your uploaded documents' if you have read the whole Context and no passage in it is relevant. "
 					"Quote or paraphrase only from the Context. Do not add facts not present in the Context.\n\n"
 					f"Question: {query}\n\nContext:\n{context}\n\n"
 					"Answer based strictly on the Context above:"
