@@ -15,7 +15,7 @@ try:
 	from langchain_text_splitters import RecursiveCharacterTextSplitter
 except ImportError:
 	# Fallback to old langchain import (langchain==0.0.350)
-	from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredWordDocumentLoader
@@ -97,7 +97,7 @@ class PatriotAIRAGSystem:
 				base_url=OLLAMA_BASE_URL,
 				temperature=0.1,
 			)
-			self.llm_fallback = None
+				self.llm_fallback = None
 			logger.info(f"Answer generation: local Ollama only (model={OLLAMA_LLM_MODEL}, base_url={OLLAMA_BASE_URL}). No Gemini/Google.")
 		except Exception as e:
 			logger.error(f"Failed to initialize Ollama LLM: {e}")
@@ -130,7 +130,7 @@ class PatriotAIRAGSystem:
 						vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
 					)
 					logger.info(f"Created Qdrant collection {collection_name} with dimension {dim}")
-				else:
+			else:
 					logger.info(f"Qdrant collection {collection_name} already exists")
 			except Exception as e:
 				logger.warning(f"Could not ensure Qdrant collection {collection_name}: {e}")
@@ -305,7 +305,7 @@ class PatriotAIRAGSystem:
 		except Exception as e:
 			logger.error(f"Failed to search documents: {e}")
 			return []
-
+	
 	def _extract_case_hint(self, query: str) -> str | None:
 		"""
 		Best-effort extraction of a case-number style hint from the query,
@@ -578,7 +578,7 @@ class PatriotAIRAGSystem:
 
 	def web_search(self, query: str, num_results: int = 0):
 		# Web search disabled; answers are based only on uploaded documents.
-		return []
+			return []
 
 	def _invoke_with_fallback(self, prompt: str) -> str:
 		# Try primary model, then fallback on 429 or quota errors
