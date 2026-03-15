@@ -53,6 +53,8 @@ const Uploads: React.FC = () => {
   const [totalUploaded, setTotalUploaded] = useState(0);
   const [sourceType, setSourceType] = useState<string>('case_law');
   const [sourceGroup, setSourceGroup] = useState<string>('Court of Appeal');
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const RECENT_LIMIT = 10;
 
   const groupOptions: { value: string; label: string }[] =
@@ -158,20 +160,27 @@ const Uploads: React.FC = () => {
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
+    setPendingFiles(files);
+    setShowUploadModal(true);
+    e.target.value = '';
+  };
 
+  const handleConfirmUpload = async () => {
+    if (!pendingFiles.length) return;
+    setShowUploadModal(false);
+    const files = [...pendingFiles];
+    setPendingFiles([]);
     setIsUploading(true);
     try {
       for (const f of files) {
-        // sequential upload to avoid overloading the backend
         // eslint-disable-next-line no-await-in-loop
         await uploadFile(f);
       }
     } finally {
       setIsUploading(false);
-      e.target.value = '';
     }
   };
 
@@ -268,43 +277,63 @@ const Uploads: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Source & Group form for uploads */}
-      <div className="legal-card p-6">
-        <h3 className="text-lg font-serif font-semibold text-legal-text mb-2">Upload settings</h3>
-        <p className="text-sm text-legal-text-muted mb-4">
-          Set the data source and group for the next document(s) you upload. These will be used for the dashboard and search.
-        </p>
-        <div className="flex flex-wrap items-end gap-4">
-          <div>
-            <label htmlFor="sourceType" className="block text-sm font-medium text-legal-text mb-1">Source</label>
-            <select
-              id="sourceType"
-              value={sourceType}
-              onChange={(e) => setSourceType(e.target.value)}
-              className="px-3 py-2 border border-legal-border rounded-lg bg-white text-legal-text focus:ring-2 focus:ring-legal-gold focus:border-transparent min-w-[200px]"
-            >
-              {SOURCE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="sourceGroup" className="block text-sm font-medium text-legal-text mb-1">
-              {sourceType === 'case_law' ? 'Court' : sourceType === 'legislation' ? 'Type' : 'Year'}
-            </label>
-            <select
-              id="sourceGroup"
-              value={sourceGroup}
-              onChange={(e) => setSourceGroup(e.target.value)}
-              className="px-3 py-2 border border-legal-border rounded-lg bg-white text-legal-text focus:ring-2 focus:ring-legal-gold focus:border-transparent min-w-[220px]"
-            >
-              {groupOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+      {/* Upload settings modal – shown after selecting files */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg border border-legal-border">
+            <h3 className="text-lg font-serif font-semibold text-legal-text mb-2">Upload settings</h3>
+            <p className="text-sm text-legal-text-muted mb-4">
+              Set the data source and group for {pendingFiles.length} document{pendingFiles.length !== 1 ? 's' : ''}. These will be used for the dashboard and search.
+            </p>
+            <div className="flex flex-wrap items-end gap-4 mb-6">
+              <div>
+                <label htmlFor="modalSourceType" className="block text-sm font-medium text-legal-text mb-1">Source</label>
+                <select
+                  id="modalSourceType"
+                  value={sourceType}
+                  onChange={(e) => setSourceType(e.target.value)}
+                  className="px-3 py-2 border border-legal-border rounded-lg bg-white text-legal-text focus:ring-2 focus:ring-legal-gold focus:border-transparent min-w-[200px]"
+                >
+                  {SOURCE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="modalSourceGroup" className="block text-sm font-medium text-legal-text mb-1">
+                  {sourceType === 'case_law' ? 'Court' : sourceType === 'legislation' ? 'Type' : 'Year'}
+                </label>
+                <select
+                  id="modalSourceGroup"
+                  value={sourceGroup}
+                  onChange={(e) => setSourceGroup(e.target.value)}
+                  className="px-3 py-2 border border-legal-border rounded-lg bg-white text-legal-text focus:ring-2 focus:ring-legal-gold focus:border-transparent min-w-[220px]"
+                >
+                  {groupOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => { setShowUploadModal(false); setPendingFiles([]); }}
+                className="px-4 py-2 text-sm font-medium rounded-lg border border-legal-border bg-white text-legal-text hover:bg-legal-bg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmUpload}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-[#8B1E3F] text-white hover:opacity-90 transition-opacity"
+              >
+                Upload {pendingFiles.length} document{pendingFiles.length !== 1 ? 's' : ''}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -344,7 +373,7 @@ const Uploads: React.FC = () => {
             accept=".pdf,.txt,.doc,.docx"
             multiple
             className="hidden"
-            onChange={handleFileUpload}
+            onChange={handleFileSelect}
           />
         </div>
       </div>
