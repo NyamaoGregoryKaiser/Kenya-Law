@@ -567,6 +567,7 @@ class PatriotAIRAGSystem:
 					logger.warning(f"No chunks found for filename {filename_in_query!r}; falling back to semantic search.")
 
 			if not relevant_docs:
+				# Prefer Phase 2 (document-level index) for all queries; fall back to chunk search only when Phase 2 returns nothing.
 				# ---- Phase 2: document-level search then fetch chunks for top docs ----
 				if document_indexer is not None:
 					try:
@@ -598,6 +599,7 @@ class PatriotAIRAGSystem:
 					logger.info(f"retrieval pass1: {len(relevant_docs)} chunks in {time.time() - retrieval_start:.2f}s")
 
 			# If retrieval is very weak, try a broader second pass before giving up (only when not filename-directed and not Phase 2)
+			used_chunk_pass2 = False
 			if not filename_in_query and not used_phase2 and len(relevant_docs) < 3:
 				retrieval2_start = time.time()
 				broader_docs = self.search_documents(query, k=40)
@@ -605,6 +607,17 @@ class PatriotAIRAGSystem:
 				# Prefer second-pass results only if they add something
 				if len(broader_docs) > len(relevant_docs):
 					relevant_docs = broader_docs
+					used_chunk_pass2 = True
+
+			# Log which retrieval path was used (for debugging and tuning)
+			if used_filename_direct:
+				logger.info("Retrieval path: filename-directed")
+			elif used_phase2:
+				logger.info("Retrieval path: Phase 2 (document-level index)")
+			elif used_chunk_pass2:
+				logger.info("Retrieval path: chunk search (kenyalaw_cases) + pass2")
+			else:
+				logger.info("Retrieval path: chunk search (kenyalaw_cases)")
 
 			# Bias results towards filenames matching a case hint (skip when we already used a filename from the query)
 			case_hint = self._extract_case_hint(query)
