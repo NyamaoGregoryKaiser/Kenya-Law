@@ -90,14 +90,22 @@ def inspect_qdrant():
         names = [c.name for c in colls]
         print(f"Collections: {names}")
         if lookup in names:
-            info = client.get_collection(lookup)
-            print(f"\n[{lookup}] vectors_count={info.vectors_count} points_count={info.points_count}")
+            try:
+                info = client.get_collection(lookup)
+                vc = getattr(info, "vectors_count", None)
+                pc = getattr(info, "points_count", None)
+                print(f"\n[{lookup}] vectors_count={vc} points_count={pc}")
+            except Exception as e:
+                print(f"\n[{lookup}] (info: {e})")
             # One sample point (payload only, no vector)
-            result, _ = client.scroll(collection_name=lookup, limit=1, with_payload=True, with_vectors=False)
-            if result:
-                p = result[0].payload or {}
-                print(f"[{lookup}] sample payload keys: {list(p.keys())}")
-                print(f"[{lookup}] sample payload: {json.dumps(_json_safe(p), indent=2, default=str)}")
+            try:
+                result, _ = client.scroll(collection_name=lookup, limit=1, with_payload=True, with_vectors=False)
+                if result:
+                    p = result[0].payload or {}
+                    print(f"[{lookup}] sample payload keys: {list(p.keys())}")
+                    print(f"[{lookup}] sample payload: {json.dumps(_json_safe(p), indent=2, default=str)}")
+            except Exception as e:
+                print(f"[{lookup}] scroll error: {e}")
         else:
             print(f"\n[{lookup}] collection not found")
         print()
