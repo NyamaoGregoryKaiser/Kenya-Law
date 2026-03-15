@@ -20,28 +20,29 @@ interface UploadedDocument {
   citation?: string;
 }
 
-const COURTS = [
+const SOURCE_OPTIONS = [
+  { value: 'case_law', label: 'Case Law' },
+  { value: 'legislation', label: 'Legislation' },
+  { value: 'kenya_gazette', label: 'Kenya Gazette' },
+] as const;
+
+const CASE_LAW_GROUPS = [
   'Supreme Court',
   'Court of Appeal',
   'High Court',
-  'Environment & Land Court (ELC)',
-  'Employment & Labour Relations Court (ELRC)',
-  'Magistrates Court',
-  'Tribunal'
+  'Employment and Labour Relations Court',
+  'Environment and Land Court',
+  'Kadhis Court',
+  'Magistrates Courts',
+  'Special Tribunals',
 ];
 
-const LEGAL_AREAS = [
-  'Constitutional',
-  'Criminal',
-  'Civil',
-  'Commercial',
-  'Land & Environment',
-  'Family',
-  'Employment',
-  'Tax',
-  'Administrative',
-  'Other'
+const LEGISLATION_GROUPS = [
+  { value: 'acts_in_force', label: 'Acts in force' },
+  { value: 'repealed_statute', label: 'Repealed statutes' },
 ];
+
+const GAZETTE_YEARS = [1954, 1963, 1964, 1965, 1966, 1968, 1969, 1976, 1980, 1981, 1982, 1986, 1987, 1988, 1990, 2000, 2005, 2006, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026];
 
 const Uploads: React.FC = () => {
   const [documents, setDocuments] = useState<UploadedDocument[]>([]);
@@ -50,7 +51,22 @@ const Uploads: React.FC = () => {
   const [showAllDocuments, setShowAllDocuments] = useState(false);
   const [totalIndexed, setTotalIndexed] = useState(0);
   const [totalUploaded, setTotalUploaded] = useState(0);
+  const [sourceType, setSourceType] = useState<string>('case_law');
+  const [sourceGroup, setSourceGroup] = useState<string>('Court of Appeal');
   const RECENT_LIMIT = 10;
+
+  const groupOptions: { value: string; label: string }[] =
+    sourceType === 'case_law'
+      ? CASE_LAW_GROUPS.map(c => ({ value: c, label: c }))
+      : sourceType === 'legislation'
+        ? LEGISLATION_GROUPS.map(g => ({ value: g.value, label: g.label }))
+        : GAZETTE_YEARS.map(y => ({ value: String(y), label: `${y} KG` }));
+
+  React.useEffect(() => {
+    if (sourceType === 'case_law') setSourceGroup(CASE_LAW_GROUPS[0]);
+    else if (sourceType === 'legislation') setSourceGroup('acts_in_force');
+    else if (sourceType === 'kenya_gazette') setSourceGroup(String(GAZETTE_YEARS[GAZETTE_YEARS.length - 1]));
+  }, [sourceType]);
 
   const fetchDocuments = useCallback(async (opts?: { showAll?: boolean }) => {
     try {
@@ -100,6 +116,8 @@ const Uploads: React.FC = () => {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('source_type', sourceType);
+      formData.append('source_group', sourceGroup);
 
       const response = await axios.post(`${API_BASE}/upload`, formData, {
         headers: {
@@ -250,6 +268,44 @@ const Uploads: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Source & Group form for uploads */}
+      <div className="legal-card p-6">
+        <h3 className="text-lg font-serif font-semibold text-legal-text mb-2">Upload settings</h3>
+        <p className="text-sm text-legal-text-muted mb-4">
+          Set the data source and group for the next document(s) you upload. These will be used for the dashboard and search.
+        </p>
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label htmlFor="sourceType" className="block text-sm font-medium text-legal-text mb-1">Source</label>
+            <select
+              id="sourceType"
+              value={sourceType}
+              onChange={(e) => setSourceType(e.target.value)}
+              className="px-3 py-2 border border-legal-border rounded-lg bg-white text-legal-text focus:ring-2 focus:ring-legal-gold focus:border-transparent min-w-[200px]"
+            >
+              {SOURCE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="sourceGroup" className="block text-sm font-medium text-legal-text mb-1">
+              {sourceType === 'case_law' ? 'Court' : sourceType === 'legislation' ? 'Type' : 'Year'}
+            </label>
+            <select
+              id="sourceGroup"
+              value={sourceGroup}
+              onChange={(e) => setSourceGroup(e.target.value)}
+              className="px-3 py-2 border border-legal-border rounded-lg bg-white text-legal-text focus:ring-2 focus:ring-legal-gold focus:border-transparent min-w-[220px]"
+            >
+              {groupOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>

@@ -3,7 +3,7 @@ PatriotAI Defense Hub - Open WebUI Extension
 A specialized defense intelligence platform for Kenya's defense sector
 """
 
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -563,10 +563,13 @@ async def download_document(filename: str, current_user: dict = Depends(get_curr
 @app.post("/api/upload", response_model=DocumentUploadResponse)
 async def upload_document(
 	file: UploadFile = File(...),
+	source_type: Optional[str] = Form(None),
+	source_group: Optional[str] = Form(None),
 	current_user: dict = Depends(get_current_user)
 ):
 	"""
-	Upload and index documents for RAG
+	Upload and index documents for RAG.
+	Optional form fields: source_type (case_law | legislation | kenya_gazette), source_group (court name, legislation_type, or year).
 	"""
 	try:
 		upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
@@ -618,8 +621,24 @@ async def upload_document(
 			full_text = "\n\n".join(d.page_content for d in docs) if docs else ""
 			legal_meta = extract_legal_metadata(full_text, file.filename)
 			master_text = build_master_text(legal_meta, full_text)
-			# Classify high-level source type (case law / legislation / Kenya Gazette)
-			source_meta = classify_source(legal_meta, file.filename, full_text)
+			# Use form-provided source/group if both given; otherwise auto-classify
+			if source_type and source_group:
+				source_meta = {"source_type": source_type.strip().lower()}
+				if source_meta["source_type"] == "case_law":
+					source_meta["court_type"] = source_group.strip()
+				elif source_meta["source_type"] == "legislation":
+					source_meta["legislation_type"] = source_group.strip().lower().replace(" ", "_")  # "repealed statutes" -> repealed_statutes
+					if source_meta["legislation_type"] not in ("acts_in_force", "repealed_statute", "repealed_statutes"):
+						source_meta["legislation_type"] = "acts_in_force"
+					if source_meta["legislation_type"] == "repealed_statutes":
+						source_meta["legislation_type"] = "repealed_statute"
+				elif source_meta["source_type"] == "kenya_gazette":
+					try:
+						source_meta["gazette_year"] = int(source_group.strip())
+					except ValueError:
+						pass
+			else:
+				source_meta = classify_source(legal_meta, file.filename, full_text)
 			# Merge upload metadata into legal_meta for richer payload
 			payload = {**legal_meta, **metadata, **source_meta, "master_text": master_text}
 			doc_id = legal_meta.get("doc_id", document_id)
