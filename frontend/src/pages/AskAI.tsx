@@ -103,6 +103,7 @@ const AskAI: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingConversation, setLoadingConversation] = useState(false);
   const [expandedSourceKey, setExpandedSourceKey] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -135,6 +136,9 @@ const AskAI: React.FC = () => {
   }, [loadConversations]);
 
   const loadConversation = useCallback(async (conversationId: string) => {
+    setLoadingConversation(true);
+    setCurrentConversationId(conversationId);
+    setMessages([]);
     try {
       const res = await axios.get(`${API_BASE}/conversations/${conversationId}`);
       const apiMessages: ApiMessage[] = res.data?.messages || [];
@@ -146,10 +150,12 @@ const AskAI: React.FC = () => {
         sourcesDetail: m.sources_detail,
       }));
       setMessages(msgs);
-      setCurrentConversationId(conversationId);
     } catch (e) {
       toast.error('Failed to load conversation');
       console.error(e);
+      setCurrentConversationId(null);
+    } finally {
+      setLoadingConversation(false);
     }
   }, []);
 
@@ -331,7 +337,15 @@ const AskAI: React.FC = () => {
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.length === 0 && (
+          {loadingConversation && (
+            <div className="flex justify-center items-center py-12">
+              <div className="flex items-center gap-3 text-legal-text-muted">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-legal-maroon border-t-transparent" />
+                <span>Loading conversation...</span>
+              </div>
+            </div>
+          )}
+          {!loadingConversation && messages.length === 0 && (
             <div className="text-center py-12">
               <div className="w-20 h-20 mx-auto mb-6 rounded-xl bg-legal-maroon flex items-center justify-center shadow-legal border-4 border-legal-gold">
                 <Scale className="w-10 h-10 text-legal-gold" />
@@ -360,7 +374,7 @@ const AskAI: React.FC = () => {
             </div>
           )}
 
-          {messages.map((message) => {
+          {!loadingConversation && messages.map((message) => {
             const isUser = message.isUser;
             return (
               <div key={message.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -491,14 +505,14 @@ const AskAI: React.FC = () => {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask about case law, legal principles, statutes, or get analysis..."
+                placeholder={currentConversationId ? "Continue the conversation..." : "Ask about case law, legal principles, statutes, or get analysis..."}
                 className="w-full px-4 py-3 border border-legal-border rounded-lg focus:outline-none focus:ring-2 focus:ring-legal-gold focus:border-transparent text-legal-text placeholder:text-legal-text-muted"
-                disabled={isLoading}
+                disabled={isLoading || loadingConversation}
               />
             </div>
             <button
               type="submit"
-              disabled={!input.trim() || isLoading}
+              disabled={!input.trim() || isLoading || loadingConversation}
               className="px-6 py-3 btn-legal rounded-lg focus:outline-none focus:ring-2 focus:ring-legal-gold focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Send className="w-5 h-5" />
