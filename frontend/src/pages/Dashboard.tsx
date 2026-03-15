@@ -13,7 +13,6 @@ import {
   MessageSquare
 } from 'lucide-react';
 import axios from 'axios';
-import MapWidget from '../components/MapWidget';
 import MetricCard from '../components/MetricCard';
 import { API_BASE } from '../utils/api';
 
@@ -197,14 +196,6 @@ const Dashboard: React.FC = () => {
                   </div>
                 </div>
               ))}
-            </div>
-
-            {/* Map Widget */}
-            <div className="mt-6 pt-6 border-t border-legal-border">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="font-semibold text-legal-text">Courts by Region</h4>
-              </div>
-              <MapWidget />
             </div>
           </div>
         </div>
