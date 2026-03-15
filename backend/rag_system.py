@@ -345,12 +345,25 @@ class PatriotAIRAGSystem:
 		try:
 			if not query or not query.strip():
 				return None
-			# Non-greedy match so we get the shortest run ending with .doc/.docx/.pdf/.txt (avoids
-			# capturing the whole rewritten query like "...audience. Summarize the facts... 85 & 86.07.doc")
-			m = re.search(r"([A-Za-z0-9_\s&.\-()]+?\.(?:docx?|pdf|txt))", query, re.IGNORECASE)
+			# The backend rewrites queries (role/tone preamble). To avoid capturing that whole sentence,
+			# extract the filename from the *last* segment after sentence-like punctuation.
+			segment = re.split(r"[.?!]\s+", query.strip())[-1]
+			# If split produced nothing useful, fall back to full query.
+			haystack = segment if segment else query
+			# Find the last filename-like substring in the segment/query.
+			matches = re.findall(r"([A-Za-z0-9_\s&.\-()]+?\.(?:docx?|pdf|txt))", haystack, re.IGNORECASE)
+			if not matches:
+				# Fallback to searching the whole query
+				matches = re.findall(r"([A-Za-z0-9_\s&.\-()]+?\.(?:docx?|pdf|txt))", query, re.IGNORECASE)
+			if not matches:
+				return None
+			# Prefer a match that contains digits or '&' (common in your filenames), and prefer the last one.
+			candidates = [m for m in matches if re.search(r"[\d&]", m)]
+			chosen = (candidates[-1] if candidates else matches[-1])
+			fname = chosen
 			if not m:
 				return None
-			fname = m.group(1).strip().strip("'\"").strip().rstrip(".")
+			fname = fname.strip().strip("'\"`").strip().rstrip(".")
 			if not fname:
 				return None
 			return fname
