@@ -134,7 +134,7 @@ class PatriotAIRAGSystem:
 						vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
 					)
 					logger.info(f"Created Qdrant collection {collection_name} with dimension {dim}")
-			else:
+				else:
 					logger.info(f"Qdrant collection {collection_name} already exists")
 			except Exception as e:
 				logger.warning(f"Could not ensure Qdrant collection {collection_name}: {e}")
