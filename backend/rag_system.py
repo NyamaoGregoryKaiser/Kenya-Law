@@ -10,6 +10,7 @@ import re
 from typing import List, Dict, Any
 from datetime import datetime
 
+import requests
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from langchain_core.documents import Document
@@ -48,6 +49,8 @@ OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", "24000"))
 USE_KL_LOOKUP = os.getenv("USE_KL_LOOKUP", "").strip().lower() in ("1", "true", "yes")
 QDRANT_KL_LOOKUP_COLLECTION = os.getenv("QDRANT_KL_LOOKUP_COLLECTION", "KL_LOOKUP")
+# OpenAI embedding model used for KL_LOOKUP (dimension 1536 for text-embedding-3-small)
+OPENAI_KL_EMBED_MODEL = os.getenv("OPENAI_KL_EMBED_MODEL", "text-embedding-3-small")
 # Structure-aware chunking: header (case title, court, parties) as its own chunk so it is retrievable.
 HEADER_MAX_CHARS = int(os.getenv("RAG_HEADER_MAX_CHARS", "1500"))
 JUDGMENT_MARKERS = ("JUDGMENT OF THE COURT", "JUDGMENT\n", "\n\nJUDGMENT ")
@@ -92,6 +95,37 @@ class PatriotAIRAGSystem:
 		self._qdrant_collection = None
 		self._initialize_llm()
 		self._initialize_vectorstore()
+
+	def _embed_with_openai_for_kl(self, text: str):
+		"""
+		Use OpenAI text-embedding-3-small (or configured OPENAI_KL_EMBED_MODEL)
+		to produce a vector compatible with the KL_LOOKUP collection (dim=1536).
+		Returns a list[float] or None on failure.
+		"""
+		api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+		if not api_key:
+			logger.warning("OPENAI_API_KEY not set; cannot embed for KL_LOOKUP. Falling back to default path.")
+			return None
+		try:
+			resp = requests.post(
+				"https://api.openai.com/v1/embeddings",
+				headers={
+					"Authorization": f"Bearer {api_key}",
+					"Content-Type": "application/json",
+				},
+				json={
+					"model": OPENAI_KL_EMBED_MODEL,
+					"input": text,
+				},
+				timeout=10,
+			)
+			resp.raise_for_status()
+			data = resp.json()
+			emb = data["data"][0]["embedding"]
+			return emb
+		except Exception as e:
+			logger.warning("OpenAI embedding for KL_LOOKUP failed: %s", e)
+			return None
 	
 	def _initialize_llm(self):
 		try:
@@ -629,8 +663,11 @@ class PatriotAIRAGSystem:
 				return None
 		except Exception:
 			return None
-		# Embed query and search KL_LOOKUP
-		query_vector = self.embeddings.embed_query(query)
+		# Embed query and search KL_LOOKUP using OpenAI embeddings (dim must match KL_LOOKUP)
+		query_vector = self._embed_with_openai_for_kl(query)
+		if not query_vector:
+			# If we cannot embed with OpenAI, skip KL_LOOKUP path
+			return None
 		k = 10
 		try:
 			results = client.search(
