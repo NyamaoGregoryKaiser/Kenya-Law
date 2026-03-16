@@ -41,6 +41,9 @@ from db_conversations import (
 	title_from_first_query,
 )
 
+# Feature flag: when true, prefer KL (MongoDB + KL_LOOKUP) as the primary data source
+USE_KL_LOOKUP = os.getenv("USE_KL_LOOKUP", "").strip().lower() in ("1", "true", "yes")
+
 # Import Open WebUI components
 try:
 	from open_webui import create_app
@@ -721,39 +724,85 @@ async def get_dashboard_metrics(
 	"""
 	Get dashboard metrics and statistics (real data from uploads, index status, and metrics.json).
 	"""
+	# Default: file-based uploads + local indexes
 	upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
 	total_uploaded = 0
 	total_indexed = 0
 	recent_documents: List[dict] = []
-	if os.path.isdir(upload_dir):
-		all_files = os.listdir(upload_dir)
-		status_map = _load_index_status(upload_dir)
-		status_filename = os.path.basename(_index_status_path(upload_dir))
-		indexed_entries: List[tuple] = []
-		for name in all_files:
-			if name == status_filename:
-				continue
-			path = os.path.join(upload_dir, name)
-			if not os.path.isfile(path):
-				continue
-			total_uploaded += 1
-			val = status_map.get(name)
-			is_indexed = bool(val.get("indexed", False)) if isinstance(val, dict) else bool(val)
-			if is_indexed:
-				total_indexed += 1
-				try:
-					stat = os.stat(path)
-					updated_at = (val.get("updated_at") if isinstance(val, dict) else None) or datetime.fromtimestamp(stat.st_mtime).isoformat()
-					indexed_entries.append((name, updated_at, stat.st_mtime))
-				except Exception:
-					indexed_entries.append((name, None, 0))
-		indexed_entries.sort(key=lambda x: x[2], reverse=True)
-		for name, updated_at, _ in indexed_entries[:15]:
-			recent_documents.append({
-				"filename": name,
-				"uploaded_at": updated_at or datetime.now().isoformat(),
-				"indexed_at": updated_at,
-			})
+
+	# When USE_KL_LOOKUP is true, prefer KL (MongoDB) for document-level metrics
+	if USE_KL_LOOKUP:
+		try:
+			from pymongo import MongoClient
+			from urllib.parse import urlparse
+			m_uri = os.getenv("MONGODB_URI", "").strip()
+			if m_uri:
+				client = MongoClient(m_uri)
+				path = (urlparse(m_uri).path or "").strip("/")
+				db_name = path or "KL"
+				db = client[db_name]
+				docs_coll = db["documents"]
+				proc_coll = db["document_processing"]
+				total_uploaded = docs_coll.count_documents({})
+				total_indexed = proc_coll.count_documents({"status": "COMPLETE"})
+				# Recent COMPLETE documents by latest processing event_time
+				recent_docs: List[dict] = []
+				for dp in proc_coll.find({"status": "COMPLETE"}).sort("event_time", -1).limit(15):
+					did = dp.get("document_id")
+					doc = docs_coll.find_one({"document_id": did}) or {}
+					name = doc.get("document_name") or did
+					created_at = doc.get("created_at") or dp.get("event_time") or datetime.now()
+					if not isinstance(created_at, str):
+						try:
+							created_at = created_at.isoformat()
+						except Exception:
+							created_at = datetime.now().isoformat()
+					event_time = dp.get("event_time") or created_at
+					if not isinstance(event_time, str):
+						try:
+							event_time = event_time.isoformat()
+						except Exception:
+							event_time = created_at
+					recent_docs.append({
+						"filename": name,
+						"uploaded_at": created_at,
+						"indexed_at": event_time,
+					})
+				recent_documents = recent_docs
+		except Exception as e:
+			logging.warning(f"Failed to read KL (MongoDB) metrics, falling back to local metrics: {e}")
+
+	# Fallback / default: local uploads + index_status.json
+	if not USE_KL_LOOKUP or not recent_documents:
+		if os.path.isdir(upload_dir):
+			all_files = os.listdir(upload_dir)
+			status_map = _load_index_status(upload_dir)
+			status_filename = os.path.basename(_index_status_path(upload_dir))
+			indexed_entries: List[tuple] = []
+			for name in all_files:
+				if name == status_filename:
+					continue
+				path = os.path.join(upload_dir, name)
+				if not os.path.isfile(path):
+					continue
+				total_uploaded += 1
+				val = status_map.get(name)
+				is_indexed = bool(val.get("indexed", False)) if isinstance(val, dict) else bool(val)
+				if is_indexed:
+					total_indexed += 1
+					try:
+						stat = os.stat(path)
+						updated_at = (val.get("updated_at") if isinstance(val, dict) else None) or datetime.fromtimestamp(stat.st_mtime).isoformat()
+						indexed_entries.append((name, updated_at, stat.st_mtime))
+					except Exception:
+						indexed_entries.append((name, None, 0))
+			indexed_entries.sort(key=lambda x: x[2], reverse=True)
+			for name, updated_at, _ in indexed_entries[:15]:
+				recent_documents.append({
+					"filename": name,
+					"uploaded_at": updated_at or datetime.now().isoformat(),
+					"indexed_at": updated_at,
+				})
 
 	# AI queries from metrics.json
 	ai_queries_today = 0
@@ -773,15 +822,43 @@ async def get_dashboard_metrics(
 		ai_queries_today = int(metrics_data.get("daily", {}).get(today, 0))
 		total_ai_queries = int(metrics_data.get("total_ai_queries", 0))
 
-	# Year range from document metadata (payload.year) for coverage display
+	# Year range and data sources for coverage display
 	coverage_min_year = None
 	coverage_max_year = None
 	data_sources = None
-	try:
-		coverage_min_year, coverage_max_year = document_indexer.get_year_range()
-		data_sources = document_indexer.get_source_counts()
-	except Exception as e:
-		logging.warning(f"Failed to get document-level metrics for dashboard: {e}")
+	if USE_KL_LOOKUP:
+		# Approximate coverage from KL documents (by created_at year)
+		try:
+			from pymongo import MongoClient
+			from urllib.parse import urlparse
+			m_uri = os.getenv("MONGODB_URI", "").strip()
+			if m_uri:
+				client = MongoClient(m_uri)
+				path = (urlparse(m_uri).path or "").strip("/")
+				db_name = path or "KL"
+				db = client[db_name]
+				docs_coll = db["documents"]
+				years = []
+				for doc in docs_coll.find({}, {"created_at": 1}):
+					val = doc.get("created_at")
+					try:
+						if hasattr(val, "year"):
+							years.append(val.year)
+						elif isinstance(val, str) and len(val) >= 4:
+							years.append(int(val[:4]))
+					except Exception:
+						continue
+				if years:
+					coverage_min_year = min(years)
+					coverage_max_year = max(years)
+		except Exception as e:
+			logging.warning(f"Failed to get KL coverage years from MongoDB: {e}")
+	else:
+		try:
+			coverage_min_year, coverage_max_year = document_indexer.get_year_range()
+			data_sources = document_indexer.get_source_counts()
+		except Exception as e:
+			logging.warning(f"Failed to get document-level metrics for dashboard: {e}")
 
 	return {
 		"judgments_indexed": total_indexed,
