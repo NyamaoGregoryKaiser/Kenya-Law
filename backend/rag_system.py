@@ -610,7 +610,17 @@ class PatriotAIRAGSystem:
 				raise
 	
 	def _generate_response_via_kl_lookup(self, query: str) -> Dict[str, Any] | None:
-		"""Use Qdrant KL_LOOKUP collection + MongoDB for search and references. Returns None to fall back to default path."""
+		"""
+		Use Qdrant KL_LOOKUP collection + MongoDB for search and references.
+		Flow:
+		1. Search KL_LOOKUP for high-level synopses.
+		2. Map hits to document_id values.
+		3. Filter to documents whose processing status is COMPLETE.
+		4. For each COMPLETE document_id, query its own Qdrant collection for fine-grained chunks,
+		   accumulating context up to MAX_CONTEXT_CHARS.
+		5. Generate answer from that context and return document names from MongoDB.
+		Returns None to fall back to the default path.
+		"""
 		if not self.embeddings or get_documents_info is None or parse_document_id_from_kl_lookup_text is None:
 			return None
 		kl_collection = QDRANT_KL_LOOKUP_COLLECTION
@@ -640,8 +650,9 @@ class PatriotAIRAGSystem:
 			return None
 		if not results:
 			return None
-		# Build context from payload["text"] and collect document_ids
-		rows: List[tuple] = []  # (doc_id or "", text)
+
+		# Collect (doc_id, synopsis_text) rows from KL_LOOKUP
+		rows: List[tuple] = []
 		for hit in results:
 			payload = hit.payload or {}
 			text = payload.get("text") or ""
@@ -651,19 +662,75 @@ class PatriotAIRAGSystem:
 			rows.append((doc_id, text))
 		if not rows:
 			return None
-		document_ids = [r[0] for r in rows if r[0]]
-		context = "\n\n".join(r[1] for r in rows)
+
+		# Resolve document metadata and filter to COMPLETE documents
+		all_doc_ids = [r[0] for r in rows if r[0]]
+		doc_info = get_documents_info(list(dict.fromkeys(all_doc_ids))) if all_doc_ids else {}
+		complete_doc_ids: List[str] = []
+		for did, info in doc_info.items():
+			status = (info.get("processing_status") or info.get("status") or "").upper()
+			if status == "COMPLETE":
+				complete_doc_ids.append(did)
+
+		# If no COMPLETE docs yet, fall back to using KL_LOOKUP synopses directly
+		use_per_collection = bool(complete_doc_ids)
+
+		context_parts: List[str] = []
+		by_document: Dict[str, List[str]] = {}
+
+		if use_per_collection:
+			# Phase A: per-document collection search for COMPLETE docs
+			for did in complete_doc_ids:
+				if len("".join(context_parts)) >= MAX_CONTEXT_CHARS:
+					break
+				try:
+					if not client.collection_exists(did):
+						continue
+					hits = client.search(
+						collection_name=did,
+						query_vector=query_vector,
+						limit=20,
+						with_payload=True,
+						with_vectors=False,
+					)
+				except Exception as e:
+					logger.warning("Per-document collection search failed for %s: %s", did, e)
+					continue
+				if not hits:
+					continue
+				label = doc_info.get(did, {}).get("document_name") or did
+				for h in hits:
+					pl = h.payload or {}
+					text = pl.get("page_content") or pl.get("text") or pl.get("content") or ""
+					if not text.strip():
+						continue
+					if len("".join(context_parts)) >= MAX_CONTEXT_CHARS:
+						break
+					context_parts.append(text)
+					snippet = text[:500] + ("..." if len(text) > 500 else "")
+					if label not in by_document:
+						by_document[label] = []
+					by_document[label].append(snippet)
+
+		# If per-collection search produced no context (or no COMPLETE docs), fall back to KL_LOOKUP synopses
+		if not context_parts:
+			for doc_id, text in rows:
+				if len("".join(context_parts)) >= MAX_CONTEXT_CHARS:
+					break
+				label = (doc_info.get(doc_id, {}).get("document_name") or doc_id) if doc_id else "Unknown"
+				context_parts.append(text)
+				snippet = text[:500] + ("..." if len(text) > 500 else "")
+				if label not in by_document:
+					by_document[label] = []
+				by_document[label].append(snippet)
+
+		if not context_parts:
+			return None
+
+		context = "\n\n".join(context_parts)
 		if len(context) > MAX_CONTEXT_CHARS:
 			context = context[:MAX_CONTEXT_CHARS]
-		# Resolve document names from MongoDB
-		doc_info = get_documents_info(list(dict.fromkeys(document_ids))) if document_ids else {}
-		# Build by_document for sources_detail: use document_name from MongoDB when available
-		by_document: Dict[str, List[str]] = {}
-		for doc_id, text in rows:
-			label = (doc_info.get(doc_id, {}).get("document_name") or doc_id) if doc_id else "Unknown"
-			if label not in by_document:
-				by_document[label] = []
-			by_document[label].append(text[:500] + ("..." if len(text) > 500 else ""))
+
 		# Generate answer
 		if self.llm:
 			prompt = (
@@ -676,18 +743,23 @@ class PatriotAIRAGSystem:
 			)
 			answer = self._invoke_with_fallback(prompt)
 		else:
-			answer = f"Based on your query, {len(results)} relevant document(s) were found. Start Ollama to get answers from this content."
+			answer = f"Based on your query, {len(by_document)} relevant document(s) were found. Start Ollama to get answers from this content."
+
 		sources = [f"Document: {path}" for path in by_document.keys()]
 		sources_detail = [{"document": path, "chunks": chunks} for path, chunks in by_document.items()]
-		confidence = min(0.35 + (len(results) - 1) * 0.1, 0.85)
-		logger.info("Retrieval path: KL_LOOKUP + MongoDB (%d docs)", len(by_document))
+		confidence = min(0.35 + (len(by_document) - 1) * 0.1, 0.85)
+		logger.info(
+			"Retrieval path: KL_LOOKUP + MongoDB (%d docs, per-collection=%s)",
+			len(by_document),
+			bool(use_per_collection),
+		)
 		return {
 			"answer": str(answer).strip(),
 			"sources": sources,
 			"sources_detail": sources_detail,
 			"confidence": round(confidence, 2),
 			"timestamp": datetime.now().isoformat(),
-			"documents_found": len(results),
+			"documents_found": len(by_document),
 			"web_sources": 0,
 		}
 
