@@ -11,11 +11,11 @@ from typing import List, Dict, Any
 from datetime import datetime
 
 try:
-	# Try newer langchain import (langchain>=0.1.0)
-	from langchain_text_splitters import RecursiveCharacterTextSplitter
+\t# Try newer langchain import (langchain>=0.1.0)
+\tfrom langchain_text_splitters import RecursiveCharacterTextSplitter
 except ImportError:
-	# Fallback to old langchain import (langchain==0.0.350)
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+\t# Fallback to old langchain import (langchain==0.0.350)
+\tfrom langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredWordDocumentLoader
