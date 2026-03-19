@@ -149,11 +149,6 @@ const Dashboard: React.FC = () => {
                 className="w-full h-full object-contain"
               />
             </div>
-            <div>
-              <div className="text-white/80 text-sm mt-1">
-                Explore indexed legal documents and analytics.
-              </div>
-            </div>
           </div>
           <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
