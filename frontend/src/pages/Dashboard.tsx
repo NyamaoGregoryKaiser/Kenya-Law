@@ -143,20 +143,35 @@ const Dashboard: React.FC = () => {
         <div className="relative p-8 text-white">
           <div className="flex items-center space-x-4">
             <div className="w-16 h-16 rounded-lg bg-white flex items-center justify-center border-2 border-legal-gold/50 p-1">
-              <img
-                src="/assets/legal/kenya-law-logo.png"
-                alt="National Council for Law Reporting logo"
+              <img 
+                src="/assets/legal/kenya-law-logo.png" 
+                alt="Kenya Law Reports" 
                 className="w-full h-full object-contain"
               />
             </div>
+            <div>
+              <h1 className="text-3xl font-serif font-bold tracking-tight">Kenya Law Reports AI</h1>
+              <p className="text-white/80 mt-1">Legal intelligence and case law for Kenya</p>
+            </div>
           </div>
-          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
               <p className="text-sm text-white/70">Legal Corpus</p>
               <p className="mt-1 text-2xl font-serif font-bold text-legal-gold">
                 {(metricsData?.judgments_indexed ?? 0).toLocaleString()}+
               </p>
               <p className="text-xs text-white/60">Judgments indexed</p>
+            </div>
+            <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
+              <p className="text-sm text-white/70">Coverage</p>
+              <p className="mt-1 text-2xl font-serif font-bold text-legal-gold">
+                {metricsData?.coverage_min_year != null && metricsData?.coverage_max_year != null
+                  ? metricsData.coverage_min_year === metricsData.coverage_max_year
+                    ? String(metricsData.coverage_min_year)
+                    : `${metricsData.coverage_min_year} – ${metricsData.coverage_max_year}`
+                  : '—'}
+              </p>
+              <p className="text-xs text-white/60">Years of jurisprudence</p>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
               <p className="text-sm text-white/70">Motto</p>
