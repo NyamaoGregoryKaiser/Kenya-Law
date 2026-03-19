@@ -642,15 +642,16 @@ class PatriotAIRAGSystem:
 		"""
 		Use Qdrant KL_LOOKUP collection + MongoDB for search and references.
 		Flow:
-		1. Search KL_LOOKUP for high-level synopses.
-		2. Map hits to document_id values.
-		3. Filter to documents whose processing status is COMPLETE.
-		4. For each COMPLETE document_id, query its own Qdrant collection for fine-grained chunks,
-		   accumulating context up to MAX_CONTEXT_CHARS.
-		5. Generate answer from that context and return document names from MongoDB.
+		1. Embed user question (OpenAI, to match KL_LOOKUP dim).
+		2. Search KL_LOOKUP collection.
+		3. From each hit's `text`, parse the FIRST LINE: `COLLECTION-ID : <collection-id>`.
+		   Split on ':' and take the second element (collection_id == document_id).
+		4. Take top N collection IDs, then search those N collections with the same embedded question.
+		5. Feed the resulting texts to the LLM (up to MAX_CONTEXT_CHARS).
+		6. Use MongoDB `documents` to resolve sources (redact `/home/.../kl_documents` from document_path).
 		Returns None to fall back to the default path.
 		"""
-		if not self.embeddings or get_documents_info is None or parse_document_id_from_kl_lookup_text is None:
+		if get_documents_info is None or parse_document_id_from_kl_lookup_text is None:
 			return None
 		kl_collection = QDRANT_KL_LOOKUP_COLLECTION
 		client = self._qdrant_client
@@ -668,7 +669,7 @@ class PatriotAIRAGSystem:
 		if not query_vector:
 			# If we cannot embed with OpenAI, skip KL_LOOKUP path
 			return None
-		k = 10
+		k = int(os.getenv("KL_LOOKUP_TOP_K", "10"))
 		try:
 			results = client.search(
 				collection_name=kl_collection,
@@ -683,78 +684,83 @@ class PatriotAIRAGSystem:
 		if not results:
 			return None
 
-		# Collect (doc_id, synopsis_text) rows from KL_LOOKUP
-		rows: List[tuple] = []
+		# Parse top N collection IDs from KL_LOOKUP hit texts
+		lookup_rows: List[tuple] = []  # (collection_id, lookup_text)
 		for hit in results:
 			payload = hit.payload or {}
 			text = payload.get("text") or ""
 			if not text.strip():
 				continue
-			doc_id = payload.get("document_id") or payload.get("collection_id") or parse_document_id_from_kl_lookup_text(text) or ""
-			rows.append((doc_id, text))
-		if not rows:
+			cid = parse_document_id_from_kl_lookup_text(text) or ""
+			if cid:
+				lookup_rows.append((cid, text))
+		if not lookup_rows:
 			return None
 
-		# Resolve document metadata and filter to COMPLETE documents
-		all_doc_ids = [r[0] for r in rows if r[0]]
-		doc_info = get_documents_info(list(dict.fromkeys(all_doc_ids))) if all_doc_ids else {}
-		complete_doc_ids: List[str] = []
-		for did, info in doc_info.items():
-			status = (info.get("processing_status") or info.get("status") or "").upper()
-			if status == "COMPLETE":
-				complete_doc_ids.append(did)
+		top_n = int(os.getenv("KL_COLLECTION_TOP_N", "3"))
+		# Preserve rank order from KL_LOOKUP; unique
+		top_ids: List[str] = []
+		for cid, _ in lookup_rows:
+			if cid not in top_ids:
+				top_ids.append(cid)
+			if len(top_ids) >= top_n:
+				break
 
-		# If no COMPLETE docs yet, fall back to using KL_LOOKUP synopses directly
-		use_per_collection = bool(complete_doc_ids)
-
+		# Search the top N collections using the same embedded question
+		per_collection_limit = int(os.getenv("KL_COLLECTION_HITS_PER_DOC", "20"))
 		context_parts: List[str] = []
 		by_document: Dict[str, List[str]] = {}
 
-		if use_per_collection:
-			# Phase A: per-document collection search for COMPLETE docs
-			for did in complete_doc_ids:
-				if len("".join(context_parts)) >= MAX_CONTEXT_CHARS:
-					break
-				try:
-					if not client.collection_exists(did):
-						continue
-					hits = client.search(
-						collection_name=did,
-						query_vector=query_vector,
-						limit=20,
-						with_payload=True,
-						with_vectors=False,
-					)
-				except Exception as e:
-					logger.warning("Per-document collection search failed for %s: %s", did, e)
-					continue
-				if not hits:
-					continue
-				label = doc_info.get(did, {}).get("document_name") or did
-				for h in hits:
-					pl = h.payload or {}
-					text = pl.get("page_content") or pl.get("text") or pl.get("content") or ""
-					if not text.strip():
-						continue
-					if len("".join(context_parts)) >= MAX_CONTEXT_CHARS:
-						break
-					context_parts.append(text)
-					snippet = text[:500] + ("..." if len(text) > 500 else "")
-					if label not in by_document:
-						by_document[label] = []
-					by_document[label].append(snippet)
+		# Mongo metadata (best-effort) to build sources with redacted path
+		doc_info = get_documents_info(top_ids) if top_ids else {}
+		redact_prefix = os.getenv("KL_DOC_PATH_REDACT_PREFIX", "/home/ubuntu/demos/kl_documents")
 
-		# If per-collection search produced no context (or no COMPLETE docs), fall back to KL_LOOKUP synopses
-		if not context_parts:
-			for doc_id, text in rows:
+		def _label_for(doc_id: str) -> str:
+			info = doc_info.get(doc_id) or {}
+			path = (info.get("document_path") or "").strip()
+			if path and redact_prefix and path.startswith(redact_prefix):
+				path = path[len(redact_prefix):].lstrip("/")
+			return path or (info.get("document_name") or doc_id)
+
+		for cid in top_ids:
+			if len("".join(context_parts)) >= MAX_CONTEXT_CHARS:
+				break
+			try:
+				if not client.collection_exists(cid):
+					continue
+				hits = client.search(
+					collection_name=cid,
+					query_vector=query_vector,
+					limit=per_collection_limit,
+					with_payload=True,
+					with_vectors=False,
+				)
+			except Exception as e:
+				logger.warning("Per-collection search failed for %s: %s", cid, e)
+				continue
+			if not hits:
+				continue
+			label = _label_for(cid)
+			for h in hits:
+				pl = h.payload or {}
+				text = pl.get("page_content") or pl.get("text") or pl.get("content") or ""
+				if not text.strip():
+					continue
 				if len("".join(context_parts)) >= MAX_CONTEXT_CHARS:
 					break
-				label = (doc_info.get(doc_id, {}).get("document_name") or doc_id) if doc_id else "Unknown"
 				context_parts.append(text)
 				snippet = text[:500] + ("..." if len(text) > 500 else "")
-				if label not in by_document:
-					by_document[label] = []
-				by_document[label].append(snippet)
+				by_document.setdefault(label, []).append(snippet)
+
+		if not context_parts:
+			# If per-collection search produced no context, fall back to KL_LOOKUP texts as context
+			for cid, text in lookup_rows[:top_n]:
+				if len("".join(context_parts)) >= MAX_CONTEXT_CHARS:
+					break
+				label = _label_for(cid)
+				context_parts.append(text)
+				snippet = text[:500] + ("..." if len(text) > 500 else "")
+				by_document.setdefault(label, []).append(snippet)
 
 		if not context_parts:
 			return None
@@ -780,11 +786,7 @@ class PatriotAIRAGSystem:
 		sources = [f"Document: {path}" for path in by_document.keys()]
 		sources_detail = [{"document": path, "chunks": chunks} for path, chunks in by_document.items()]
 		confidence = min(0.35 + (len(by_document) - 1) * 0.1, 0.85)
-		logger.info(
-			"Retrieval path: KL_LOOKUP + MongoDB (%d docs, per-collection=%s)",
-			len(by_document),
-			bool(use_per_collection),
-		)
+		logger.info("Retrieval path: KL_LOOKUP -> topN collections (%d docs, N=%d)", len(by_document), top_n)
 		return {
 			"answer": str(answer).strip(),
 			"sources": sources,

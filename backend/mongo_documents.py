@@ -80,13 +80,25 @@ def get_documents_info(document_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     return result
 
 
-# Match "CollectionID : <uuid>" in KL_LOOKUP payload text (uuid with underscores)
-COLLECTION_ID_RE = re.compile(r"CollectionID\s*:\s*([a-f0-9_]+)", re.IGNORECASE)
-
-
 def parse_document_id_from_kl_lookup_text(text: str) -> Optional[str]:
-    """Extract document_id (collection id) from KL_LOOKUP payload text."""
+    """
+    Extract document_id (collection id) from KL_LOOKUP payload text.
+
+    Boss spec: the first line is `COLLECTION-ID : <collection-id>`.
+    We split the first line on ':' and take the second element.
+
+    We also accept older variants like `CollectionID : <id>`.
+    """
     if not text:
         return None
-    m = COLLECTION_ID_RE.search(text)
-    return m.group(1).strip() if m else None
+    first_line = (text.splitlines()[0] if text else "").strip()
+    if first_line:
+        parts = first_line.split(":", 1)
+        if len(parts) == 2:
+            key = parts[0].strip().lower().replace("_", "-")
+            if key in ("collection-id", "collectionid"):
+                val = parts[1].strip()
+                return val or None
+    # Fallback: scan anywhere in text for collection id markers
+    m = re.search(r"(collection[\s\-_]*id)\s*:\s*([a-f0-9_]+)", text, re.IGNORECASE)
+    return (m.group(2).strip() if m else None)
