@@ -143,15 +143,16 @@ const Dashboard: React.FC = () => {
         <div className="relative p-8 text-white">
           <div className="flex items-center space-x-4">
             <div className="w-16 h-16 rounded-lg bg-white flex items-center justify-center border-2 border-legal-gold/50 p-1">
-              <img 
-                src="/assets/legal/kenya-law-logo.png" 
-                alt="Kenya Law Reports" 
+              <img
+                src="/assets/legal/kenya-law-logo.png"
+                alt="National Council for Law Reporting logo"
                 className="w-full h-full object-contain"
               />
             </div>
             <div>
-              <h1 className="text-3xl font-serif font-bold tracking-tight">Judicial Intelligence Dashboard</h1>
-              <p className="text-white/80 mt-1">Case law analytics, search, and document activity</p>
+              <div className="text-white/80 text-sm mt-1">
+                Explore indexed legal documents and analytics.
+              </div>
             </div>
           </div>
           <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
