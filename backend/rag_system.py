@@ -36,10 +36,11 @@ except ImportError:
 
 # KL_LOOKUP + MongoDB (colleague's pipeline: KL_LOOKUP in Qdrant, documents/document_processing in MongoDB)
 try:
-	from mongo_documents import get_documents_info, parse_document_id_from_kl_lookup_text
+	from mongo_documents import get_documents_info, parse_document_id_from_kl_lookup_text, find_document_ids_by_name_hint
 except ImportError:
 	get_documents_info = None
 	parse_document_id_from_kl_lookup_text = None
+	find_document_ids_by_name_hint = None
 
 # Local Ollama configuration (LLM + embeddings)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
@@ -705,6 +706,20 @@ class PatriotAIRAGSystem:
 				top_ids.append(cid)
 			if len(top_ids) >= top_n:
 				break
+
+		# If the user explicitly mentions a document name hint (e.g. "Vol. CXXVIII-No. 4"),
+		# force that document_id to the front so we search its collection.
+		if find_document_ids_by_name_hint is not None:
+			m = re.search(r"(Vol\.\s*[A-Z0-9XIV\-]+-No\.\s*\d+)", query, re.IGNORECASE)
+			if m:
+				hint = m.group(1).strip()
+				forced_ids = find_document_ids_by_name_hint(hint, limit=3)
+				for fid in reversed(forced_ids):
+					if fid in top_ids:
+						top_ids.remove(fid)
+					top_ids.insert(0, fid)
+				# re-trim to top_n
+				top_ids = top_ids[:top_n]
 
 		# Search the top N collections using the same embedded question
 		per_collection_limit = int(os.getenv("KL_COLLECTION_HITS_PER_DOC", "20"))

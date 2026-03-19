@@ -80,6 +80,35 @@ def get_documents_info(document_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     return result
 
 
+def find_document_ids_by_name_hint(name_hint: str, limit: int = 5) -> List[str]:
+    """
+    Find document_id(s) whose document_name loosely matches the provided hint.
+    Used when the user explicitly mentions a Gazette volume / Act name.
+    """
+    hint = (name_hint or "").strip()
+    if not hint:
+        return []
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        db = client[_db_name]
+        # Case-insensitive substring match
+        cur = db["documents"].find(
+            {"document_name": {"$regex": re.escape(hint), "$options": "i"}},
+            {"document_id": 1},
+        ).limit(int(limit))
+        out: List[str] = []
+        for row in cur:
+            did = row.get("document_id")
+            if did and did not in out:
+                out.append(str(did))
+        return out
+    except Exception as e:
+        logger.warning("find_document_ids_by_name_hint failed: %s", e)
+        return []
+
+
 def parse_document_id_from_kl_lookup_text(text: str) -> Optional[str]:
     """
     Extract document_id (collection id) from KL_LOOKUP payload text.
