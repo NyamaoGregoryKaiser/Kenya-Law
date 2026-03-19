@@ -102,6 +102,11 @@ const Dashboard: React.FC = () => {
 
   const recentDocs = metricsData?.recent_documents ?? [];
   const dataSources: DataSources | undefined | null = metricsData?.data_sources;
+  const caseLawTotal = dataSources?.case_law?.total ?? 0;
+  const legislationTotal = dataSources?.legislation?.total ?? 0;
+  const gazetteTotal = dataSources?.kenya_gazette?.total ?? 0;
+  const allSourcesTotal = caseLawTotal + legislationTotal + gazetteTotal;
+  const pct = (v: number) => (allSourcesTotal > 0 ? Math.round((v / allSourcesTotal) * 100) : 0);
 
   const formatRelativeTime = (iso: string | null) => {
     if (!iso) return '—';
@@ -204,34 +209,49 @@ const Dashboard: React.FC = () => {
             </div>
 
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="text-xs text-legal-text-muted">
+                Total indexed across sources: {allSourcesTotal.toLocaleString()}
+              </div>
+
+              <div className="space-y-3">
                 <div>
-                  <p className="text-sm font-medium text-legal-text">Case law documents</p>
-                  <p className="text-xs text-legal-text-muted">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-legal-text">Case law documents</p>
+                    <span className="text-sm font-semibold text-legal-maroon">
+                      {caseLawTotal.toLocaleString()} ({pct(caseLawTotal)}%)
+                    </span>
+                  </div>
+                  <p className="text-xs text-legal-text-muted mb-1">
                     Courts: {(dataSources?.case_law?.by_court && Object.keys(dataSources.case_law.by_court).length) || 0}
                   </p>
+                  <div className="h-2 rounded bg-legal-bg border border-legal-border overflow-hidden">
+                    <div className="h-full bg-legal-maroon" style={{ width: `${pct(caseLawTotal)}%` }} />
+                  </div>
                 </div>
-                <span className="text-lg font-semibold text-legal-maroon">
-                  {(dataSources?.case_law?.total ?? 0).toLocaleString()}
-                </span>
-              </div>
 
-              <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-legal-text">Legislation documents</p>
-                  <p className="text-xs text-legal-text-muted">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-legal-text">Legislation documents</p>
+                    <span className="text-sm font-semibold text-legal-maroon">
+                      {legislationTotal.toLocaleString()} ({pct(legislationTotal)}%)
+                    </span>
+                  </div>
+                  <p className="text-xs text-legal-text-muted mb-1">
                     Acts in force: {dataSources?.legislation?.acts_in_force ?? 0}, Repealed: {dataSources?.legislation?.repealed_statutes ?? 0}
                   </p>
+                  <div className="h-2 rounded bg-legal-bg border border-legal-border overflow-hidden">
+                    <div className="h-full bg-legal-gold" style={{ width: `${pct(legislationTotal)}%` }} />
+                  </div>
                 </div>
-                <span className="text-lg font-semibold text-legal-maroon">
-                  {(dataSources?.legislation?.total ?? 0).toLocaleString()}
-                </span>
-              </div>
 
-              <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-legal-text">Kenya Gazette documents</p>
-                  <p className="text-xs text-legal-text-muted">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-legal-text">Kenya Gazette documents</p>
+                    <span className="text-sm font-semibold text-legal-maroon">
+                      {gazetteTotal.toLocaleString()} ({pct(gazetteTotal)}%)
+                    </span>
+                  </div>
+                  <p className="text-xs text-legal-text-muted mb-1">
                     {dataSources?.kenya_gazette?.years && dataSources.kenya_gazette.years.length > 0
                       ? (() => {
                           const years = dataSources.kenya_gazette!.years!;
@@ -241,10 +261,10 @@ const Dashboard: React.FC = () => {
                         })()
                       : 'No gazettes indexed yet'}
                   </p>
+                  <div className="h-2 rounded bg-legal-bg border border-legal-border overflow-hidden">
+                    <div className="h-full bg-legal-maroon-dark" style={{ width: `${pct(gazetteTotal)}%` }} />
+                  </div>
                 </div>
-                <span className="text-lg font-semibold text-legal-maroon">
-                  {(dataSources?.kenya_gazette?.total ?? 0).toLocaleString()}
-                </span>
               </div>
             </div>
           </div>
