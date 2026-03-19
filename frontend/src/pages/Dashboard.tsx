@@ -25,15 +25,18 @@ interface RecentDocument {
 interface DataSources {
   case_law?: {
     total?: number;
+    complete_total?: number;
     by_court?: Record<string, number>;
   };
   legislation?: {
     total?: number;
+    complete_total?: number;
     acts_in_force?: number;
     repealed_statutes?: number;
   };
   kenya_gazette?: {
     total?: number;
+    complete_total?: number;
     years?: number[];
   };
 }
@@ -102,10 +105,14 @@ const Dashboard: React.FC = () => {
 
   const recentDocs = metricsData?.recent_documents ?? [];
   const dataSources: DataSources | undefined | null = metricsData?.data_sources;
+  // Percentages should reflect COMPLETE document status by source
   const caseLawTotal = dataSources?.case_law?.total ?? 0;
   const legislationTotal = dataSources?.legislation?.total ?? 0;
   const gazetteTotal = dataSources?.kenya_gazette?.total ?? 0;
-  const allSourcesTotal = caseLawTotal + legislationTotal + gazetteTotal;
+  const caseLawComplete = dataSources?.case_law?.complete_total ?? caseLawTotal;
+  const legislationComplete = dataSources?.legislation?.complete_total ?? legislationTotal;
+  const gazetteComplete = dataSources?.kenya_gazette?.complete_total ?? gazetteTotal;
+  const allSourcesTotal = caseLawComplete + legislationComplete + gazetteComplete;
   const pct = (v: number) => (allSourcesTotal > 0 ? Math.round((v / allSourcesTotal) * 100) : 0);
 
   const formatRelativeTime = (iso: string | null) => {
@@ -218,14 +225,14 @@ const Dashboard: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-legal-text">Case law documents</p>
                     <span className="text-sm font-semibold text-legal-maroon">
-                      {caseLawTotal.toLocaleString()} ({pct(caseLawTotal)}%)
+                      {caseLawTotal.toLocaleString()} ({pct(caseLawComplete)}%)
                     </span>
                   </div>
                   <p className="text-xs text-legal-text-muted mb-1">
                     Courts: {(dataSources?.case_law?.by_court && Object.keys(dataSources.case_law.by_court).length) || 0}
                   </p>
                   <div className="h-2 rounded bg-legal-bg border border-legal-border overflow-hidden">
-                    <div className="h-full bg-legal-maroon" style={{ width: `${pct(caseLawTotal)}%` }} />
+                    <div className="h-full bg-legal-maroon" style={{ width: `${pct(caseLawComplete)}%` }} />
                   </div>
                 </div>
 
@@ -233,14 +240,14 @@ const Dashboard: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-legal-text">Legislation documents</p>
                     <span className="text-sm font-semibold text-legal-maroon">
-                      {legislationTotal.toLocaleString()} ({pct(legislationTotal)}%)
+                      {legislationTotal.toLocaleString()} ({pct(legislationComplete)}%)
                     </span>
                   </div>
                   <p className="text-xs text-legal-text-muted mb-1">
                     Acts in force: {dataSources?.legislation?.acts_in_force ?? 0}, Repealed: {dataSources?.legislation?.repealed_statutes ?? 0}
                   </p>
                   <div className="h-2 rounded bg-legal-bg border border-legal-border overflow-hidden">
-                    <div className="h-full bg-legal-gold" style={{ width: `${pct(legislationTotal)}%` }} />
+                    <div className="h-full bg-legal-gold" style={{ width: `${pct(legislationComplete)}%` }} />
                   </div>
                 </div>
 
@@ -248,7 +255,7 @@ const Dashboard: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-legal-text">Kenya Gazette documents</p>
                     <span className="text-sm font-semibold text-legal-maroon">
-                      {gazetteTotal.toLocaleString()} ({pct(gazetteTotal)}%)
+                      {gazetteTotal.toLocaleString()} ({pct(gazetteComplete)}%)
                     </span>
                   </div>
                   <p className="text-xs text-legal-text-muted mb-1">
@@ -262,7 +269,7 @@ const Dashboard: React.FC = () => {
                       : 'No gazettes indexed yet'}
                   </p>
                   <div className="h-2 rounded bg-legal-bg border border-legal-border overflow-hidden">
-                    <div className="h-full bg-legal-maroon-dark" style={{ width: `${pct(gazetteTotal)}%` }} />
+                    <div className="h-full bg-legal-maroon-dark" style={{ width: `${pct(gazetteComplete)}%` }} />
                   </div>
                 </div>
               </div>

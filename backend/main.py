@@ -854,17 +854,30 @@ async def get_dashboard_metrics(
 
 				# Data sources from KL document paths
 				ds = {
-					"case_law": {"total": 0, "by_court": {}},
-					"legislation": {"total": 0, "acts_in_force": 0, "repealed_statutes": 0},
-					"kenya_gazette": {"total": 0, "years": []},
+					"case_law": {"total": 0, "complete_total": 0, "by_court": {}},
+					"legislation": {"total": 0, "complete_total": 0, "acts_in_force": 0, "repealed_statutes": 0},
+					"kenya_gazette": {"total": 0, "complete_total": 0, "years": []},
 				}
 				gazette_years = set()
+				# Build a set of document_ids that are COMPLETE in processing status
+				complete_ids = set()
+				try:
+					for proc in proc_coll.find({"status": "COMPLETE"}, {"document_id": 1}):
+						did = proc.get("document_id")
+						if did:
+							complete_ids.add(str(did))
+				except Exception:
+					pass
 				for doc in docs_coll.find({}, {"document_path": 1}):
 					p = str(doc.get("document_path") or "")
 					pl = p.lower()
+					did = str(doc.get("document_id") or "")
+					is_complete = did in complete_ids
 					# Gazette folders include KG or KG-1
 					if "/kg/" in pl or "/kg-1/" in pl:
 						ds["kenya_gazette"]["total"] += 1
+						if is_complete:
+							ds["kenya_gazette"]["complete_total"] += 1
 						# Capture year from path segment, e.g. /KG-1/2020/... or /KG/2026-KG/...
 						for m in __import__("re").finditer(r"(19|20)\d{2}", p):
 							try:
@@ -876,6 +889,8 @@ async def get_dashboard_metrics(
 					# Legislation folders
 					if "/legislation/" in pl:
 						ds["legislation"]["total"] += 1
+						if is_complete:
+							ds["legislation"]["complete_total"] += 1
 						if "repealed" in pl:
 							ds["legislation"]["repealed_statutes"] += 1
 						else:
@@ -884,6 +899,8 @@ async def get_dashboard_metrics(
 					# Case law folders
 					if "/case-law/" in pl:
 						ds["case_law"]["total"] += 1
+						if is_complete:
+							ds["case_law"]["complete_total"] += 1
 						# Optional court bucket from first folder under case-law
 						try:
 							parts = p.replace("\\", "/").split("/case-law/", 1)[1].split("/")
