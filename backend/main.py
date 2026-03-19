@@ -851,6 +851,50 @@ async def get_dashboard_metrics(
 				if years:
 					coverage_min_year = min(years)
 					coverage_max_year = max(years)
+
+				# Data sources from KL document paths
+				ds = {
+					"case_law": {"total": 0, "by_court": {}},
+					"legislation": {"total": 0, "acts_in_force": 0, "repealed_statutes": 0},
+					"kenya_gazette": {"total": 0, "years": []},
+				}
+				gazette_years = set()
+				for doc in docs_coll.find({}, {"document_path": 1}):
+					p = str(doc.get("document_path") or "")
+					pl = p.lower()
+					# Gazette folders include KG or KG-1
+					if "/kg/" in pl or "/kg-1/" in pl:
+						ds["kenya_gazette"]["total"] += 1
+						# Capture year from path segment, e.g. /KG-1/2020/... or /KG/2026-KG/...
+						for m in __import__("re").finditer(r"(19|20)\d{2}", p):
+							try:
+								gazette_years.add(int(m.group(0)))
+								break
+							except Exception:
+								pass
+						continue
+					# Legislation folders
+					if "/legislation/" in pl:
+						ds["legislation"]["total"] += 1
+						if "repealed" in pl:
+							ds["legislation"]["repealed_statutes"] += 1
+						else:
+							ds["legislation"]["acts_in_force"] += 1
+						continue
+					# Case law folders
+					if "/case-law/" in pl:
+						ds["case_law"]["total"] += 1
+						# Optional court bucket from first folder under case-law
+						try:
+							parts = p.replace("\\", "/").split("/case-law/", 1)[1].split("/")
+							if parts and parts[0]:
+								ct = parts[0]
+								ds["case_law"]["by_court"][ct] = ds["case_law"]["by_court"].get(ct, 0) + 1
+						except Exception:
+							pass
+				if gazette_years:
+					ds["kenya_gazette"]["years"] = sorted(gazette_years)
+				data_sources = ds
 		except Exception as e:
 			logging.warning(f"Failed to get KL coverage years from MongoDB: {e}")
 	else:
