@@ -39,6 +39,7 @@ from db_conversations import (
 	update_conversation_title,
 	delete_conversation,
 	title_from_first_query,
+	get_active_users_counts,
 )
 
 # Feature flag: when true, prefer KL (MongoDB + KL_LOOKUP) as the primary data source
@@ -807,6 +808,8 @@ async def get_dashboard_metrics(
 	# AI queries from metrics.json
 	ai_queries_today = 0
 	total_ai_queries = 0
+	active_users_today = 0
+	active_users_7d = 0
 	try:
 		m_path = _metrics_path()
 		if os.path.exists(m_path):
@@ -821,6 +824,12 @@ async def get_dashboard_metrics(
 	if isinstance(metrics_data, dict):
 		ai_queries_today = int(metrics_data.get("daily", {}).get(today, 0))
 		total_ai_queries = int(metrics_data.get("total_ai_queries", 0))
+	try:
+		au = get_active_users_counts()
+		active_users_today = int(au.get("active_users_today", 0))
+		active_users_7d = int(au.get("active_users_7d", 0))
+	except Exception as e:
+		logging.warning(f"Failed to compute active users metrics: {e}")
 
 	# Year range and data sources for coverage display
 	coverage_min_year = None
@@ -926,6 +935,8 @@ async def get_dashboard_metrics(
 		"documents_uploaded": total_uploaded,
 		"ai_queries_today": ai_queries_today,
 		"total_ai_queries": total_ai_queries,
+		"active_users_today": active_users_today,
+		"active_users_7d": active_users_7d,
 		"last_updated": datetime.now().isoformat(),
 		"recent_documents": recent_documents,
 		"coverage_min_year": coverage_min_year,

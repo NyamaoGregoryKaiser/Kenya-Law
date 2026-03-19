@@ -6,7 +6,7 @@ import os
 import logging
 import json
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 from contextlib import contextmanager
 
@@ -186,3 +186,27 @@ def title_from_first_query(query: str, max_len: int = 60) -> str:
 	if len(s) <= max_len:
 		return s
 	return s[: max_len - 3].rstrip() + "..."
+
+
+def get_active_users_counts() -> dict:
+	"""
+	Return active user counts from conversations:
+	- active_users_today: distinct user_id with a conversation updated today (UTC)
+	- active_users_7d: distinct user_id with a conversation updated in last 7 days (UTC)
+	"""
+	today = datetime.utcnow().date().isoformat()
+	with _get_conn() as conn:
+		_ensure_tables(conn)
+		with conn.cursor() as cur:
+			# created_at/updated_at are stored as ISO strings; prefix match by YYYY-MM-DD works for UTC date bucket
+			cur.execute(
+				"SELECT COUNT(DISTINCT user_id) FROM conversations WHERE updated_at LIKE %s",
+				(today + "%",),
+			)
+			today_count = int((cur.fetchone() or [0])[0] or 0)
+			cur.execute(
+				"SELECT COUNT(DISTINCT user_id) FROM conversations WHERE updated_at >= %s",
+				((datetime.utcnow().replace(microsecond=0) - timedelta(days=7)).isoformat() + "Z",),
+			)
+			week_count = int((cur.fetchone() or [0])[0] or 0)
+	return {"active_users_today": today_count, "active_users_7d": week_count}

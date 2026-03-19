@@ -47,6 +47,8 @@ const Dashboard: React.FC = () => {
     documents_uploaded: number;
     ai_queries_today: number;
     total_ai_queries: number;
+    active_users_today?: number;
+    active_users_7d?: number;
     last_updated: string;
     recent_documents?: RecentDocument[];
     coverage_min_year?: number | null;
@@ -86,9 +88,9 @@ const Dashboard: React.FC = () => {
       color: 'gold' as const 
     },
     { 
-      title: 'Courts Covered', 
-      value: (metricsData?.judgments_indexed ?? 0).toLocaleString(), 
-      change: '', 
+      title: 'Active Users', 
+      value: (metricsData?.active_users_today ?? 0).toLocaleString(), 
+      change: `7d: ${(metricsData?.active_users_7d ?? 0).toLocaleString()}`,
       changeType: 'neutral' as const, 
       icon: Building2, 
       color: 'maroon' as const 
