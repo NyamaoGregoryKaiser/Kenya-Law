@@ -868,7 +868,7 @@ async def get_dashboard_metrics(
 							complete_ids.add(str(did))
 				except Exception:
 					pass
-				for doc in docs_coll.find({}, {"document_path": 1}):
+				for doc in docs_coll.find({}, {"document_path": 1, "document_id": 1}):
 					p = str(doc.get("document_path") or "")
 					pl = p.lower()
 					did = str(doc.get("document_id") or "")
