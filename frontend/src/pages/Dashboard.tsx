@@ -150,28 +150,17 @@ const Dashboard: React.FC = () => {
               />
             </div>
             <div>
-              <h1 className="text-3xl font-serif font-bold tracking-tight">Kenya Law Reports AI</h1>
-              <p className="text-white/80 mt-1">Legal intelligence and case law for Kenya</p>
+              <h1 className="text-3xl font-serif font-bold tracking-tight">Judicial Intelligence Dashboard</h1>
+              <p className="text-white/80 mt-1">Case law analytics, search, and document activity</p>
             </div>
           </div>
-          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
               <p className="text-sm text-white/70">Legal Corpus</p>
               <p className="mt-1 text-2xl font-serif font-bold text-legal-gold">
                 {(metricsData?.judgments_indexed ?? 0).toLocaleString()}+
               </p>
               <p className="text-xs text-white/60">Judgments indexed</p>
-            </div>
-            <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
-              <p className="text-sm text-white/70">Coverage</p>
-              <p className="mt-1 text-2xl font-serif font-bold text-legal-gold">
-                {metricsData?.coverage_min_year != null && metricsData?.coverage_max_year != null
-                  ? metricsData.coverage_min_year === metricsData.coverage_max_year
-                    ? String(metricsData.coverage_min_year)
-                    : `${metricsData.coverage_min_year} – ${metricsData.coverage_max_year}`
-                  : '—'}
-              </p>
-              <p className="text-xs text-white/60">Years of jurisprudence</p>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-lg p-4 border border-white/10">
               <p className="text-sm text-white/70">Motto</p>
