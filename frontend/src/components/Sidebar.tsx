@@ -25,12 +25,11 @@ const Sidebar: React.FC = () => {
         <div className="flex items-center space-x-3">
           <img 
             src="/assets/legal/kenya-law-logo.png" 
-            alt="Kenya Law Reports" 
+            alt="National Council for Law Reporting" 
             className="w-12 h-12 object-contain"
           />
           <div>
-            <h1 className="text-lg font-serif font-bold text-white">Kenya Law</h1>
-            <p className="text-xs text-legal-gold">Reports AI</p>
+            <h1 className="text-sm font-serif font-bold text-white leading-snug">National Council for Law Reporting</h1>
           </div>
         </div>
         {/* Gold accent line */}
@@ -88,7 +87,7 @@ const Sidebar: React.FC = () => {
       <div className="absolute bottom-0 w-64 p-4 border-t border-white/10">
         <div className="text-center">
           <p className="text-xs text-white/50">Powered by</p>
-          <p className="text-sm font-serif text-legal-gold">Kenya Law Reports</p>
+          <p className="text-sm font-serif text-legal-gold">National Council for Law Reporting</p>
           <p className="text-xs text-white/40 mt-1">Justice and Equality</p>
         </div>
       </div>

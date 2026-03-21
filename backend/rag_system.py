@@ -1,5 +1,5 @@
 """
-RAG (Retrieval-Augmented Generation) System for Kenya Law AI.
+RAG (Retrieval-Augmented Generation) System for National Council for Law Reporting.
 Integrates document indexing, vector search, and AI-powered responses.
 """
 

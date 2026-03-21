@@ -145,12 +145,12 @@ const Dashboard: React.FC = () => {
             <div className="w-16 h-16 rounded-lg bg-white flex items-center justify-center border-2 border-legal-gold/50 p-1">
               <img 
                 src="/assets/legal/kenya-law-logo.png" 
-                alt="Kenya Law Reports" 
+                alt="National Council for Law Reporting" 
                 className="w-full h-full object-contain"
               />
             </div>
             <div>
-              <h1 className="text-3xl font-serif font-bold tracking-tight">Kenya Law Reports AI</h1>
+              <h1 className="text-3xl font-serif font-bold tracking-tight">National Council for Law Reporting</h1>
               <p className="text-white/80 mt-1">Legal intelligence and case law for Kenya</p>
             </div>
           </div>

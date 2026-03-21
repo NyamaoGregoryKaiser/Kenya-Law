@@ -43,12 +43,12 @@ const Login: React.FC = () => {
           <div className="w-28 h-28 bg-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-2xl relative border-4 border-legal-gold p-2">
             <img 
               src="/assets/legal/kenya-law-logo.png" 
-              alt="Kenya Law Reports" 
+              alt="National Council for Law Reporting" 
               className="w-full h-full object-contain"
             />
           </div>
           <h1 className="text-3xl font-serif font-bold text-white mb-2">
-            Kenya Law Reports AI
+            National Council for Law Reporting
           </h1>
           <p className="text-white/70">
             Legal intelligence for Kenya&apos;s law reports
@@ -130,7 +130,7 @@ const Login: React.FC = () => {
         {/* Footer */}
         <div className="text-center mt-8">
           <p className="text-white/50 text-sm">
-            © 2026 Kenya Law Reports AI. All rights reserved.
+            © 2026 National Council for Law Reporting. All rights reserved.
           </p>
           <p className="text-white/30 text-xs mt-1">
             Powered by Legal Intelligence

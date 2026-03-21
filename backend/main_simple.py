@@ -1,5 +1,5 @@
 """
-Kenya Law Reports AI - Simplified Backend
+National Council for Law Reporting - Simplified Backend
 A minimal version for legal intelligence without heavy AI dependencies
 """
 
@@ -13,7 +13,7 @@ from datetime import datetime
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Kenya Law Reports AI",
+    title="National Council for Law Reporting",
     version="1.0.0",
     description="AI-powered legal intelligence platform for Kenya Law Reports"
 )
@@ -122,7 +122,7 @@ LEGAL_PROMPTS = [
 @app.get("/")
 async def root():
     return {
-        "message": "Kenya Law Reports AI API",
+        "message": "National Council for Law Reporting API",
         "version": "1.0.0",
         "description": "AI-powered legal intelligence for Kenya Law Reports"
     }
@@ -365,7 +365,7 @@ async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "service": "Kenya Law Reports AI",
+        "service": "National Council for Law Reporting",
         "timestamp": datetime.now().isoformat()
     }
 

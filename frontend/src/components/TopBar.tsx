@@ -15,11 +15,11 @@ const TopBar: React.FC = () => {
           <div className="flex items-center space-x-4">
             <img 
               src="/assets/legal/kenya-law-logo.png" 
-              alt="Kenya Law Reports" 
+              alt="National Council for Law Reporting" 
               className="w-10 h-10 object-contain"
             />
             <div>
-              <h2 className="text-xl font-serif font-bold text-legal-text">Kenya Law Reports AI</h2>
+              <h2 className="text-xl font-serif font-bold text-legal-text">National Council for Law Reporting</h2>
               <span className="text-sm text-legal-text-muted">Legal Intelligence Platform</span>
             </div>
           </div>

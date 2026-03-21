@@ -209,7 +209,7 @@ security = HTTPBearer()
 @app.get("/")
 async def root():
 	return {
-		"message": "Kenya Law AI API",
+		"message": "National Council for Law Reporting API",
 		"version": "1.0.0",
 		"description": "AI-powered legal research and analysis for Kenya's justice sector"
 	}
@@ -329,7 +329,7 @@ async def query_ai(
 		logging.info(f"query_rewrite took {time.time() - query_rewrite_start:.2f}s")
 
 		system_prompt = (
-			"You are Kenya Law AI, an assistant for Kenyan law and jurisprudence. "
+			"You are the National Council for Law Reporting legal assistant, for Kenyan law and jurisprudence. "
 			"Be accurate, concise, and practical. Explain relevant legal principles, case law, and statutes, "
 			"highlight important precedents, and clearly state assumptions. Use clear, professional English."
 		)
